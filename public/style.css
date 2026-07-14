@@ -585,38 +585,220 @@ main {
     margin-bottom: 20px;
 }
 
-/* ?????? ?????? */
+/* ¹ÝÀÀÇü */
 @media (max-width: 768px) {
     .container {
-        padding: 15px;
+        padding: 12px;
     }
-    
+
     header {
         flex-direction: column;
-        gap: 15px;
-        text-align: center;
+        align-items: stretch;
+        gap: 12px;
+        padding: 16px;
+        margin-bottom: 16px;
+        text-align: left;
     }
-    
+
     header h1 {
-        font-size: 1.5rem;
+        font-size: 1.35rem;
     }
-    
-    main {
-        padding: 20px;
-    }
-    
-    .post-meta {
-        flex-direction: column;
+
+    .header-actions {
+        width: 100%;
+        justify-content: space-between;
+        align-items: center;
         gap: 8px;
     }
-    
+
+    .auth-user {
+        flex: 1;
+        min-width: 0;
+        flex-wrap: wrap;
+        gap: 6px;
+        font-size: 13px;
+    }
+
+    .auth-user-name {
+        max-width: 100%;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .header-actions > .btn-primary {
+        width: auto;
+        flex-shrink: 0;
+        padding: 10px 14px;
+        font-size: 13px;
+    }
+
+    .btn-sm {
+        padding: 8px 12px;
+        font-size: 12px;
+    }
+
+    main {
+        padding: 16px;
+        border-radius: 12px;
+    }
+
+    .board-header {
+        margin-bottom: 18px;
+    }
+
+    .board-info {
+        margin-top: 12px;
+        font-size: 13px;
+    }
+
+    .category-tabs {
+        flex-wrap: nowrap;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: none;
+        gap: 8px;
+        padding-bottom: 2px;
+    }
+
+    .category-tabs::-webkit-scrollbar {
+        display: none;
+    }
+
+    .category-tab {
+        flex-shrink: 0;
+        padding: 8px 14px;
+        font-size: 13px;
+    }
+
+    .post-item {
+        padding: 14px;
+    }
+
+    .post-title {
+        font-size: 1rem;
+    }
+
+    .post-title-row {
+        flex-wrap: wrap;
+        gap: 6px;
+    }
+
+    .post-meta {
+        flex-wrap: wrap;
+        gap: 6px 12px;
+    }
+
+    .post-item.photo-post {
+        grid-template-columns: 88px 1fr;
+        gap: 10px 12px;
+    }
+
+    .post-photo-preview,
+    .post-photo-preview img {
+        width: 88px;
+        height: 66px;
+    }
+
+    .post-detail-title {
+        font-size: 1.4rem;
+    }
+
+    .post-detail-meta {
+        gap: 8px 14px;
+        font-size: 13px;
+    }
+
+    .post-detail-content {
+        padding: 16px;
+        font-size: 15px;
+    }
+
+    .post-images {
+        grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+        gap: 10px;
+    }
+
+    .post-image {
+        height: 160px;
+    }
+
     .form-actions,
     .post-actions {
-        flex-direction: column;
+        flex-direction: row;
+        gap: 10px;
     }
-    
-    .btn {
+
+    .form-actions .btn,
+    .post-actions .btn,
+    .no-posts .btn {
+        flex: 1;
+        width: auto;
+        padding: 12px 10px;
+        font-size: 14px;
+    }
+
+    .photo-preview-list {
+        grid-template-columns: repeat(auto-fill, minmax(80px, 80px));
+    }
+
+    .photo-preview-item {
+        width: 80px;
+        height: 80px;
+    }
+
+    .photo-remove-btn {
+        top: 4px;
+        right: 4px;
+        padding: 4px 8px;
+        font-size: 11px;
+    }
+
+    .loading,
+    .no-posts {
+        padding: 40px 16px;
+    }
+}
+
+@media (max-width: 400px) {
+    .header-actions {
+        flex-wrap: wrap;
+    }
+
+    .header-actions > .btn-primary {
         width: 100%;
+    }
+
+    .auth-user {
+        width: 100%;
+        justify-content: space-between;
+    }
+
+    .post-item.photo-post {
+        grid-template-columns: 1fr;
+    }
+
+    .post-item.photo-post .post-photo-preview {
+        grid-column: 1;
+        grid-row: 1;
+        width: 100%;
+        height: auto;
+        max-height: 180px;
+    }
+
+    .post-item.photo-post .post-photo-preview img {
+        width: 100%;
+        height: 180px;
+    }
+
+    .post-item.photo-post .post-header {
+        grid-column: 1;
+        grid-row: 2;
+    }
+
+    .post-item.photo-post .post-preview {
+        grid-column: 1;
+        grid-row: 3;
     }
 }
 
