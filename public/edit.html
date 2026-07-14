@@ -1,0 +1,178 @@
+﻿<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>게시글 수정 - 게시판</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>게시글 수정</h1>
+            <button onclick="goBack()" class="btn btn-secondary">뒤로가기</button>
+        </header>
+        
+        <main>
+            <div id="loading" class="loading">
+                게시글을 불러오는 중...
+            </div>
+            
+            <form id="edit-form" class="edit-form" style="display: none;">
+                <div class="form-group">
+                    <label for="title">제목</label>
+                    <input type="text" id="title" name="title" required maxlength="100" placeholder="제목을 입력하세요">
+                </div>
+                
+                <div class="form-group">
+                    <label for="author">작성자</label>
+                    <input type="text" id="author" name="author" required maxlength="20" placeholder="작성자명을 입력하세요">
+                </div>
+                
+                <div class="form-group">
+                    <label for="content">내용</label>
+                    <textarea id="content" name="content" required rows="10" placeholder="내용을 입력하세요"></textarea>
+                </div>
+                
+                <div class="form-actions">
+                    <button type="submit" class="btn btn-primary">수정하기</button>
+                    <button type="button" onclick="goBack()" class="btn btn-secondary">취소</button>
+                </div>
+            </form>
+            
+            <div id="error-message" style="display: none; text-align: center; padding: 60px 20px; color: #ff6b6b;">
+                <h3>게시글을 찾을 수 없습니다.</h3>
+                <button onclick="location.href='index.html'" class="btn btn-secondary" style="margin-top: 20px;">목록으로 돌아가기</button>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        let currentPost = null;
+        
+        // URL에서 게시글 ID 가져오기
+        function getPostId() {
+            const urlParams = new URLSearchParams(window.location.search);
+            return urlParams.get('id');
+        }
+        
+        // 게시글 정보 로드
+        async function loadPost() {
+            const postId = getPostId();
+            if (!postId) {
+                showError();
+                return;
+            }
+            
+            try {
+                const response = await fetch(`/api/posts/${postId}`);
+                const post = await response.json();
+                
+                if (response.ok) {
+                    currentPost = post;
+                    displayPost(post);
+                } else {
+                    showError();
+                }
+            } catch (error) {
+                console.error('게시글 로드 오류:', error);
+                showError();
+            }
+        }
+        
+        // 게시글 정보 표시
+        function displayPost(post) {
+            document.getElementById('loading').style.display = 'none';
+            document.getElementById('edit-form').style.display = 'block';
+            
+            document.getElementById('title').value = post.title;
+            document.getElementById('author').value = post.author;
+            document.getElementById('content').value = post.content;
+        }
+        
+        // 에러 표시
+        function showError() {
+            document.getElementById('loading').style.display = 'none';
+            document.getElementById('error-message').style.display = 'block';
+        }
+        
+        // 뒤로가기
+        function goBack() {
+            if (currentPost) {
+                location.href = `view.html?id=${currentPost.id}`;
+            } else {
+                location.href = 'index.html';
+            }
+        }
+        
+        // 폼 제출 처리
+        document.getElementById('edit-form').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            const formData = new FormData(this);
+            const data = {
+                title: formData.get('title'),
+                author: formData.get('author'),
+                content: formData.get('content')
+            };
+            
+            // 유효성 검사
+            if (!data.title.trim() || !data.author.trim() || !data.content.trim()) {
+                alert('모든 항목을 입력해주세요.');
+                return;
+            }
+            
+            try {
+                const response = await fetch(`/api/posts/${currentPost.id}`, {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(data)
+                });
+                
+                const result = await response.json();
+                
+                if (response.ok) {
+                    alert(result.message);
+                    location.href = `view.html?id=${currentPost.id}`;
+                } else {
+                    alert(result.message);
+                }
+            } catch (error) {
+                console.error('게시글 수정 오류:', error);
+                alert('게시글 수정에 실패했습니다.');
+            }
+        });
+        
+        // 제목 입력 시 실시간 글자 수 표시
+        document.getElementById('title').addEventListener('input', function() {
+            const maxLength = 100;
+            const currentLength = this.value.length;
+            const remaining = maxLength - currentLength;
+            
+            if (remaining < 10) {
+                this.style.borderColor = '#ff6b6b';
+            } else {
+                this.style.borderColor = '#e2e8f0';
+            }
+        });
+        
+        // 작성자 입력 시 실시간 글자 수 표시
+        document.getElementById('author').addEventListener('input', function() {
+            const maxLength = 20;
+            const currentLength = this.value.length;
+            const remaining = maxLength - currentLength;
+            
+            if (remaining < 3) {
+                this.style.borderColor = '#ff6b6b';
+            } else {
+                this.style.borderColor = '#e2e8f0';
+            }
+        });
+        
+        // 페이지 로드 시 게시글 로드
+        document.addEventListener('DOMContentLoaded', loadPost);
+    </script>
+</body>
+</html>

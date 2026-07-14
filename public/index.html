@@ -1,0 +1,105 @@
+﻿<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>게시판</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>게시판</h1>
+            <button onclick="location.href='write.html'" class="btn btn-primary">글쓰기</button>
+        </header>
+        
+        <main>
+            <div class="board-header">
+                <div class="board-info">
+                    <span>전체 게시글: <span id="total-count">0</span>개</span>
+                </div>
+            </div>
+            
+            <div class="posts-container">
+                <div id="posts-list" class="posts-list">
+                </div>
+                
+                <div id="loading" class="loading">
+                    게시글을 불러오는 중...
+                </div>
+                
+                <div id="no-posts" class="no-posts" style="display: none;">
+                    <p>등록된 게시글이 없습니다.</p>
+                    <button onclick="location.href='write.html'" class="btn btn-primary">첫 게시글 작성하기</button>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        async function loadPosts() {
+            try {
+                const response = await fetch('/api/posts');
+                const posts = await response.json();
+                
+                const postsList = document.getElementById('posts-list');
+                const loading = document.getElementById('loading');
+                const noPosts = document.getElementById('no-posts');
+                const totalCount = document.getElementById('total-count');
+                
+                loading.style.display = 'none';
+                totalCount.textContent = posts.length;
+                
+                if (posts.length === 0) {
+                    noPosts.style.display = 'block';
+                    return;
+                }
+                
+                let html = '';
+                posts.forEach(post => {
+                    html += '<div class="post-item" onclick="viewPost(\'' + post.id + '\')">';
+                    html += '<div class="post-header">';
+                    html += '<h3 class="post-title">' + escapeHtml(post.title) + '</h3>';
+                    html += '<div class="post-meta">';
+                    html += '<span class="author">' + escapeHtml(post.author) + '</span>';
+                    html += '<span class="date">' + formatDate(post.created_at) + '</span>';
+                    html += '<span class="views">조회 ' + (post.views || 0) + '</span>';
+                    html += '</div></div>';
+                    html += '<div class="post-preview">' + escapeHtml(post.content.substring(0, 100)) + (post.content.length > 100 ? '...' : '') + '</div>';
+                    html += '</div>';
+                });
+                postsList.innerHTML = html;
+                
+            } catch (error) {
+                console.error('게시글 로드 오류:', error);
+                document.getElementById('loading').innerHTML = '게시글을 불러오는데 실패했습니다.';
+            }
+        }
+        
+        function viewPost(id) {
+            location.href = 'view.html?id=' + id;
+        }
+        
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+        
+        function formatDate(dateString) {
+    const date = new Date(dateString);
+    // 한국시간으로 변환 (UTC+9)
+    const koreanTime = new Date(date.getTime() + (9 * 60 * 60 * 1000));
+    
+    const year = koreanTime.getUTCFullYear();
+    const month = String(koreanTime.getUTCMonth() + 1).padStart(2, '0');
+    const day = String(koreanTime.getUTCDate()).padStart(2, '0');
+    const hours = String(koreanTime.getUTCHours()).padStart(2, '0');
+    const minutes = String(koreanTime.getUTCMinutes()).padStart(2, '0');
+    return `${year}-${month}-${day} ${hours}:${minutes}`;
+}
+        
+        document.addEventListener('DOMContentLoaded', loadPosts);
+    </script>
+</body>
+</html>
