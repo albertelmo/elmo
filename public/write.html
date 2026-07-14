@@ -19,12 +19,26 @@
         <main>
             <form id="write-form" class="write-form">
                 <div class="form-group">
-                    <label for="title">제목</label>
+                    <label for="category">카테고리</label>
+                    <select id="category" name="category" required></select>
+                </div>
+
+                <div id="photo-section" class="photo-section" style="display: none;">
+                    <div class="form-group">
+                        <label for="images">사진</label>
+                        <input type="file" id="images" name="images" accept="image/jpeg,image/png,image/webp,image/gif" multiple>
+                        <p class="form-help">사진이 메인입니다. JPG, PNG, WEBP, GIF / 최대 20장</p>
+                    </div>
+                    <div id="image-preview-list" class="photo-preview-list"></div>
+                </div>
+
+                <div class="form-group">
+                    <label for="title" id="title-label">제목</label>
                     <input type="text" id="title" name="title" required maxlength="100" placeholder="제목을 입력하세요">
                 </div>
                 
                 <div class="form-group">
-                    <label for="content">내용</label>
+                    <label for="content" id="content-label">내용</label>
                     <textarea id="content" name="content" required rows="10" placeholder="내용을 입력하세요"></textarea>
                 </div>
                 
@@ -44,30 +58,84 @@
 
         renderUserHeader('user-header');
 
+        let selectedFiles = [];
+
+        const defaultCategory = new URLSearchParams(window.location.search).get('category') || '생각들';
+        const initialCategory = POST_CATEGORIES.includes(defaultCategory) ? defaultCategory : '생각들';
+
+        renderCategorySelect('category', initialCategory, handleCategoryChange);
+        updatePostFormByCategory(initialCategory);
+        renderSelectedPreviews();
+
+        document.getElementById('images').addEventListener('change', function() {
+            const newFiles = readImageFiles(this);
+            selectedFiles = selectedFiles.concat(newFiles);
+            this.value = '';
+            renderSelectedPreviews();
+        });
+
+        function handleCategoryChange(category) {
+            updatePostFormByCategory(category);
+            if (!isPhotoCategory(category)) {
+                selectedFiles = [];
+                renderSelectedPreviews();
+            }
+        }
+
+        function renderSelectedPreviews() {
+            const items = selectedFiles.map((file, index) => ({
+                previewUrl: URL.createObjectURL(file),
+                index
+            }));
+
+            renderImagePreviewList(
+                document.getElementById('image-preview-list'),
+                items,
+                removeSelectedFile
+            );
+        }
+
+        function removeSelectedFile(index) {
+            selectedFiles.splice(index, 1);
+            renderSelectedPreviews();
+        }
+
         document.getElementById('write-form').addEventListener('submit', async function(e) {
             e.preventDefault();
-            
-            const data = {
-                title: document.getElementById('title').value,
-                content: document.getElementById('content').value
-            };
-            
-            if (!data.title.trim() || !data.content.trim()) {
+
+            const category = document.getElementById('category').value;
+            const title = document.getElementById('title').value;
+            const content = document.getElementById('content').value;
+
+            if (isPhotoCategory(category) && selectedFiles.length === 0) {
+                alert('사진을 1장 이상 선택해주세요.');
+                return;
+            }
+
+            if (!isPhotoCategory(category) && (!title.trim() || !content.trim())) {
                 alert('제목과 내용을 입력해주세요.');
                 return;
             }
-            
+
+            const formData = buildPostFormData({
+                category,
+                title,
+                content
+            }, selectedFiles);
+
             try {
                 const response = await authFetch('/api/posts', {
                     method: 'POST',
-                    body: JSON.stringify(data)
+                    body: formData
                 });
-                
+
                 const result = await response.json();
-                
+
                 if (response.ok) {
                     alert(result.message);
-                    location.href = 'index.html';
+                    location.href = category
+                        ? `index.html?category=${encodeURIComponent(category)}`
+                        : 'index.html';
                 } else {
                     alert(result.message);
                 }

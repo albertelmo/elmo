@@ -39,6 +39,7 @@ async function initializeDatabase() {
                 title VARCHAR(100) NOT NULL,
                 content TEXT NOT NULL,
                 author VARCHAR(20) NOT NULL,
+                category VARCHAR(20) NOT NULL DEFAULT '생각들',
                 user_id UUID REFERENCES users(id) ON DELETE SET NULL,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -48,6 +49,18 @@ async function initializeDatabase() {
 
         await client.query(`
             ALTER TABLE posts ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES users(id) ON DELETE SET NULL
+        `);
+
+        await client.query(`
+            ALTER TABLE posts ADD COLUMN IF NOT EXISTS category VARCHAR(20) NOT NULL DEFAULT '생각들'
+        `);
+
+        await client.query(`
+            UPDATE posts SET category = '생각들' WHERE category IS NULL
+        `);
+
+        await client.query(`
+            ALTER TABLE posts ADD COLUMN IF NOT EXISTS images JSONB NOT NULL DEFAULT '[]'::jsonb
         `);
 
         console.log('[DB] 데이터베이스 테이블이 초기화되었습니다.');
@@ -101,41 +114,60 @@ async function verifyPassword(username, password) {
     };
 }
 
-async function getPosts() {
-    const result = await pool.query(`
-        SELECT id, title, content, author, user_id, created_at, updated_at, views
+function formatPost(row) {
+    if (!row) {
+        return null;
+    }
+    return {
+        ...row,
+        images: Array.isArray(row.images) ? row.images : []
+    };
+}
+
+async function getPosts(category) {
+    let query = `
+        SELECT id, title, content, author, category, user_id, images, created_at, updated_at, views
         FROM posts
-        ORDER BY created_at DESC
-    `);
-    return result.rows;
+    `;
+    const params = [];
+
+    if (category) {
+        query += ` WHERE category = $1`;
+        params.push(category);
+    }
+
+    query += ` ORDER BY created_at DESC`;
+
+    const result = await pool.query(query, params);
+    return result.rows.map(formatPost);
 }
 
 async function getPostById(id) {
     const result = await pool.query(`
-        SELECT id, title, content, author, user_id, created_at, updated_at, views
+        SELECT id, title, content, author, category, user_id, images, created_at, updated_at, views
         FROM posts
         WHERE id = $1
     `, [id]);
-    return result.rows[0];
+    return formatPost(result.rows[0]);
 }
 
-async function createPost(title, content, author, userId) {
+async function createPost(title, content, author, userId, category, images = []) {
     const result = await pool.query(`
-        INSERT INTO posts (title, content, author, user_id)
-        VALUES ($1, $2, $3, $4)
-        RETURNING id, title, content, author, user_id, created_at, updated_at, views
-    `, [title, content, author, userId]);
-    return result.rows[0];
+        INSERT INTO posts (title, content, author, user_id, category, images)
+        VALUES ($1, $2, $3, $4, $5, $6::jsonb)
+        RETURNING id, title, content, author, category, user_id, images, created_at, updated_at, views
+    `, [title, content, author, userId, category, JSON.stringify(images)]);
+    return formatPost(result.rows[0]);
 }
 
-async function updatePost(id, title, content) {
+async function updatePost(id, title, content, category, images = []) {
     const result = await pool.query(`
         UPDATE posts
-        SET title = $1, content = $2, updated_at = CURRENT_TIMESTAMP
-        WHERE id = $3
-        RETURNING id, title, content, author, user_id, created_at, updated_at, views
-    `, [title, content, id]);
-    return result.rows[0];
+        SET title = $1, content = $2, category = $3, images = $4::jsonb, updated_at = CURRENT_TIMESTAMP
+        WHERE id = $5
+        RETURNING id, title, content, author, category, user_id, images, created_at, updated_at, views
+    `, [title, content, category, JSON.stringify(images), id]);
+    return formatPost(result.rows[0]);
 }
 
 async function deletePost(id) {

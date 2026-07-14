@@ -3,6 +3,15 @@ const cors = require('cors');
 const path = require('path');
 const db = require('./database');
 const { verifyAuth, canModifyPost, signToken } = require('./middleware');
+const { CATEGORIES, isValidCategory, isPhotoCategory } = require('./categories');
+const {
+    UPLOADS_DIR,
+    postImagesUpload,
+    savePostImages,
+    deletePostImageDir,
+    cleanupRemovedImages,
+    ensureUploadsDir
+} = require('./upload-utils');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -10,8 +19,10 @@ const ADMIN_USERNAME = (process.env.ADMIN_USERNAME || '').trim();
 
 app.use(cors());
 app.use(express.json());
+app.use('/uploads', express.static(UPLOADS_DIR));
 app.use(express.static(path.join(__dirname, 'public')));
 
+ensureUploadsDir();
 db.initializeDatabase();
 
 function resolveRole(username) {
@@ -19,6 +30,49 @@ function resolveRole(username) {
         return 'admin';
     }
     return 'user';
+}
+
+function handleImageUpload(req, res, next) {
+    postImagesUpload(req, res, (err) => {
+        if (err) {
+            return res.status(400).json({ message: err.message || '이미지 업로드에 실패했습니다.' });
+        }
+        next();
+    });
+}
+
+function parseKeepImages(value) {
+    if (!value) {
+        return [];
+    }
+    try {
+        const parsed = JSON.parse(value);
+        return Array.isArray(parsed) ? parsed.filter(url => typeof url === 'string') : [];
+    } catch {
+        return [];
+    }
+}
+
+function normalizePostInput(body, category) {
+    const title = (body.title || '').trim();
+    const content = (body.content || '').trim();
+
+    if (!isValidCategory(category)) {
+        return { error: '유효하지 않은 카테고리입니다.' };
+    }
+
+    if (isPhotoCategory(category)) {
+        return {
+            title: title || '사진',
+            content
+        };
+    }
+
+    if (!title || !content) {
+        return { error: '제목과 내용을 입력해주세요.' };
+    }
+
+    return { title, content };
 }
 
 app.post('/api/auth/register', async (req, res) => {
@@ -113,9 +167,18 @@ app.get('/api/auth/me', verifyAuth, async (req, res) => {
     }
 });
 
+app.get('/api/categories', verifyAuth, (req, res) => {
+    res.json(CATEGORIES);
+});
+
 app.get('/api/posts', verifyAuth, async (req, res) => {
     try {
-        const posts = await db.getPosts();
+        const category = req.query.category;
+        if (category && !isValidCategory(category)) {
+            return res.status(400).json({ message: '유효하지 않은 카테고리입니다.' });
+        }
+
+        const posts = await db.getPosts(category || null);
         res.json(posts);
     } catch (error) {
         console.error('[API] 게시글 목록 조회 오류:', error);
@@ -142,20 +205,44 @@ app.get('/api/posts/:id', verifyAuth, async (req, res) => {
     }
 });
 
-app.post('/api/posts', verifyAuth, async (req, res) => {
+app.post('/api/posts', verifyAuth, handleImageUpload, async (req, res) => {
     try {
-        const { title, content } = req.body;
+        const category = (req.body.category || '').trim();
+        const normalized = normalizePostInput(req.body, category);
+        if (normalized.error) {
+            return res.status(400).json({ message: normalized.error });
+        }
 
-        if (!title || !content) {
-            return res.status(400).json({ message: '제목과 내용을 입력해주세요.' });
+        const files = req.files || [];
+        if (isPhotoCategory(category) && files.length === 0) {
+            return res.status(400).json({ message: '사진을 1장 이상 업로드해주세요.' });
+        }
+        if (!isPhotoCategory(category) && files.length > 0) {
+            return res.status(400).json({ message: '사진 업로드는 사진들 카테고리에서만 가능합니다.' });
         }
 
         const newPost = await db.createPost(
-            title.trim(),
-            content.trim(),
+            normalized.title,
+            normalized.content,
             req.user.name,
-            req.user.userId
+            req.user.userId,
+            category,
+            []
         );
+
+        let imageUrls = [];
+        if (files.length > 0) {
+            imageUrls = savePostImages(newPost.id, files);
+            const updatedPost = await db.updatePost(
+                newPost.id,
+                normalized.title,
+                normalized.content,
+                category,
+                imageUrls
+            );
+            return res.json({ message: '게시글이 작성되었습니다.', post: updatedPost });
+        }
+
         res.json({ message: '게시글이 작성되었습니다.', post: newPost });
     } catch (error) {
         console.error('[API] 게시글 작성 오류:', error);
@@ -163,13 +250,13 @@ app.post('/api/posts', verifyAuth, async (req, res) => {
     }
 });
 
-app.put('/api/posts/:id', verifyAuth, async (req, res) => {
+app.put('/api/posts/:id', verifyAuth, handleImageUpload, async (req, res) => {
     try {
         const postId = req.params.id;
-        const { title, content } = req.body;
-
-        if (!title || !content) {
-            return res.status(400).json({ message: '제목과 내용을 입력해주세요.' });
+        const category = (req.body.category || '').trim();
+        const normalized = normalizePostInput(req.body, category);
+        if (normalized.error) {
+            return res.status(400).json({ message: normalized.error });
         }
 
         const post = await db.getPostById(postId);
@@ -181,7 +268,39 @@ app.put('/api/posts/:id', verifyAuth, async (req, res) => {
             return res.status(403).json({ message: '수정 권한이 없습니다.' });
         }
 
-        const updatedPost = await db.updatePost(postId, title.trim(), content.trim());
+        const files = req.files || [];
+        if (!isPhotoCategory(category) && files.length > 0) {
+            return res.status(400).json({ message: '사진 업로드는 사진들 카테고리에서만 가능합니다.' });
+        }
+
+        let nextImages = [];
+        if (isPhotoCategory(category)) {
+            const keepImages = parseKeepImages(req.body.keep_images);
+            const validKeepImages = keepImages.filter(url => (post.images || []).includes(url));
+            const newImageUrls = files.length > 0 ? savePostImages(postId, files) : [];
+            nextImages = [...validKeepImages, ...newImageUrls];
+
+            if (nextImages.length === 0) {
+                return res.status(400).json({ message: '사진을 1장 이상 남겨주세요.' });
+            }
+        } else if ((post.images || []).length > 0) {
+            cleanupRemovedImages(post.images, []);
+            deletePostImageDir(postId);
+        }
+
+        const previousImages = post.images || [];
+        const updatedPost = await db.updatePost(
+            postId,
+            normalized.title,
+            normalized.content,
+            category,
+            nextImages
+        );
+
+        if (isPhotoCategory(category)) {
+            cleanupRemovedImages(previousImages, nextImages);
+        }
+
         res.json({ message: '게시글이 수정되었습니다.', post: updatedPost });
     } catch (error) {
         console.error('[API] 게시글 수정 오류:', error);
@@ -203,6 +322,8 @@ app.delete('/api/posts/:id', verifyAuth, async (req, res) => {
         }
 
         await db.deletePost(postId);
+        deletePostImageDir(postId);
+
         res.json({ message: '게시글이 삭제되었습니다.' });
     } catch (error) {
         console.error('[API] 게시글 삭제 오류:', error);

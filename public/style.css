@@ -1,4 +1,4 @@
-/* 현대적인 게시판 디자인 */
+/* ???????? ????? ?????? */
 * {
     margin: 0;
     padding: 0;
@@ -18,7 +18,7 @@ body {
     padding: 20px;
 }
 
-/* 헤더 스타일 */
+/* ??? ????? */
 header {
     background: rgba(255, 255, 255, 0.95);
     backdrop-filter: blur(10px);
@@ -113,7 +113,7 @@ header h1 {
     background-clip: text;
 }
 
-/* 버튼 스타일 */
+/* ??? ????? */
 .btn {
     padding: 12px 24px;
     border: none;
@@ -159,7 +159,7 @@ header h1 {
     box-shadow: 0 6px 20px rgba(255, 107, 107, 0.6);
 }
 
-/* 메인 컨텐츠 */
+/* ???? ?????? */
 main {
     background: rgba(255, 255, 255, 0.95);
     backdrop-filter: blur(10px);
@@ -168,7 +168,7 @@ main {
     box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
 }
 
-/* 게시판 헤더 */
+/* ????? ??? */
 .board-header {
     margin-bottom: 25px;
     padding-bottom: 15px;
@@ -178,9 +178,222 @@ main {
 .board-info {
     color: #718096;
     font-size: 14px;
+    margin-top: 16px;
 }
 
-/* 게시글 목록 */
+.category-tabs {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.category-tab {
+    padding: 10px 18px;
+    border: 2px solid #e2e8f0;
+    border-radius: 999px;
+    background: #f7fafc;
+    color: #4a5568;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.category-tab:hover {
+    border-color: #667eea;
+    color: #667eea;
+}
+
+.category-tab.active {
+    background: linear-gradient(135deg, #667eea, #764ba2);
+    border-color: transparent;
+    color: white;
+}
+
+.category-badge {
+    display: inline-block;
+    padding: 4px 10px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 700;
+    white-space: nowrap;
+}
+
+.category-?????? {
+    background: #ebf4ff;
+    color: #3182ce;
+}
+
+.category-?????? {
+    background: #fefcbf;
+    color: #b7791f;
+}
+
+.category-???? {
+    background: #e6fffa;
+    color: #319795;
+}
+
+.post-title-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 8px;
+}
+
+.post-title-row .post-title {
+    margin-bottom: 0;
+}
+
+.post-category {
+    margin-bottom: 12px;
+}
+
+.photo-section {
+    margin-bottom: 10px;
+}
+
+.form-help {
+    margin-top: 8px;
+    font-size: 13px;
+    color: #718096;
+}
+
+.photo-preview-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(96px, 96px));
+    gap: 10px;
+    margin-top: 12px;
+}
+
+.photo-preview-item {
+    position: relative;
+    border-radius: 10px;
+    overflow: hidden;
+    background: #edf2f7;
+    width: 96px;
+    height: 96px;
+}
+
+.photo-preview-item img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+}
+
+.photo-remove-btn {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    border: none;
+    border-radius: 999px;
+    background: rgba(0, 0, 0, 0.65);
+    color: white;
+    padding: 6px 10px;
+    font-size: 12px;
+    cursor: pointer;
+}
+
+.photo-empty {
+    color: #718096;
+    font-size: 14px;
+}
+
+.post-photo-preview {
+    position: relative;
+    width: 120px;
+    height: 90px;
+    overflow: hidden;
+    border-radius: 10px;
+    margin-bottom: 10px;
+    background: #edf2f7;
+    flex-shrink: 0;
+}
+
+.post-photo-preview img {
+    width: 120px;
+    height: 90px;
+    object-fit: cover;
+    display: block;
+}
+
+.post-item.photo-post {
+    display: grid;
+    grid-template-columns: 120px 1fr;
+    gap: 12px 16px;
+    align-items: start;
+}
+
+.post-item.photo-post .post-header {
+    grid-column: 2;
+    grid-row: 1;
+    margin-bottom: 0;
+}
+
+.post-item.photo-post .post-photo-preview {
+    grid-column: 1;
+    grid-row: 1 / span 2;
+    margin-bottom: 0;
+}
+
+.post-item.photo-post .post-preview {
+    grid-column: 2;
+    grid-row: 2;
+    margin-top: 0;
+}
+
+.photo-count {
+    position: absolute;
+    right: 12px;
+    bottom: 12px;
+    background: rgba(0, 0, 0, 0.65);
+    color: white;
+    padding: 4px 10px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.post-images-wrap {
+    margin-bottom: 20px;
+}
+
+.post-images {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 16px;
+}
+
+.post-image-link {
+    display: block;
+    border-radius: 12px;
+    overflow: hidden;
+    background: #edf2f7;
+}
+
+.post-image {
+    width: 100%;
+    height: 240px;
+    object-fit: cover;
+    display: block;
+    transition: transform 0.2s ease;
+}
+
+.post-image-link:hover .post-image {
+    transform: scale(1.02);
+}
+
+.post-item.photo-post .post-title {
+    font-size: 1.05rem;
+}
+
+.post-item.photo-post .post-preview {
+    margin-top: 8px;
+    font-size: 13px;
+}
+
+/* ???? ??? */
 .posts-list {
     display: flex;
     flex-direction: column;
@@ -251,7 +464,7 @@ main {
     font-size: 14px;
 }
 
-/* 폼 스타일 */
+/* ?? ????? */
 .write-form, .edit-form {
     max-width: 800px;
     margin: 0 auto;
@@ -270,7 +483,8 @@ main {
 }
 
 .form-group input,
-.form-group textarea {
+.form-group textarea,
+.form-group select {
     width: 100%;
     padding: 12px 16px;
     border: 2px solid #e2e8f0;
@@ -281,7 +495,8 @@ main {
 }
 
 .form-group input:focus,
-.form-group textarea:focus {
+.form-group textarea:focus,
+.form-group select:focus {
     outline: none;
     border-color: #667eea;
     background: white;
@@ -303,7 +518,7 @@ main {
     border-top: 2px solid #e2e8f0;
 }
 
-/* 게시글 상세보기 */
+/* ???? ????? */
 .post-detail {
     max-width: 800px;
     margin: 0 auto;
@@ -351,7 +566,7 @@ main {
     border-top: 2px solid #e2e8f0;
 }
 
-/* 로딩 및 빈 상태 */
+/* ???? ?? ?? ???? */
 .loading {
     text-align: center;
     padding: 60px 20px;
@@ -370,7 +585,7 @@ main {
     margin-bottom: 20px;
 }
 
-/* 반응형 디자인 */
+/* ?????? ?????? */
 @media (max-width: 768px) {
     .container {
         padding: 15px;
@@ -405,7 +620,7 @@ main {
     }
 }
 
-/* 애니메이션 */
+/* ??????? */
 @keyframes fadeIn {
     from {
         opacity: 0;
@@ -421,7 +636,7 @@ main {
     animation: fadeIn 0.5s ease-out;
 }
 
-/* 스크롤바 스타일 */
+/* ?????? ????? */
 ::-webkit-scrollbar {
     width: 8px;
 }

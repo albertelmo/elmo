@@ -21,9 +21,11 @@
 
             <div id="post-detail" class="post-detail" style="display: none;">
                 <div class="post-detail-header">
+                    <div id="post-category" class="post-category"></div>
                     <h2 id="post-title" class="post-detail-title"></h2>
                     <div id="post-meta" class="post-detail-meta"></div>
                 </div>
+                <div id="post-images" class="post-images-wrap"></div>
                 <div id="post-content" class="post-detail-content"></div>
                 <div id="post-actions" class="post-actions" style="display: none;">
                     <button onclick="editPost()" class="btn btn-primary">수정</button>
@@ -81,8 +83,26 @@
         function displayPost(post) {
             document.getElementById('loading').style.display = 'none';
             document.getElementById('post-detail').style.display = 'block';
+            document.getElementById('post-category').innerHTML = renderCategoryBadge(post.category);
             document.getElementById('post-title').textContent = post.title;
-            document.getElementById('post-content').textContent = post.content;
+
+            const imagesWrap = document.getElementById('post-images');
+            const contentEl = document.getElementById('post-content');
+
+            if (isPhotoCategory(post.category) && post.images && post.images.length > 0) {
+                imagesWrap.innerHTML = renderPostImages(post.images);
+                imagesWrap.style.display = 'block';
+                contentEl.textContent = post.content || '';
+                contentEl.style.display = post.content ? 'block' : 'none';
+                if (!post.content) {
+                    contentEl.classList.add('post-detail-content-caption-empty');
+                }
+            } else {
+                imagesWrap.innerHTML = '';
+                imagesWrap.style.display = 'none';
+                contentEl.textContent = post.content;
+                contentEl.style.display = 'block';
+            }
 
             const meta = document.getElementById('post-meta');
             meta.innerHTML = `
@@ -122,7 +142,9 @@
 
                 if (response.ok) {
                     alert(result.message);
-                    location.href = 'index.html';
+                    location.href = currentPost.category
+                        ? `index.html?category=${encodeURIComponent(currentPost.category)}`
+                        : 'index.html';
                 } else {
                     alert(result.message);
                 }

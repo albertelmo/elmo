@@ -23,12 +23,30 @@
             
             <form id="edit-form" class="edit-form" style="display: none;">
                 <div class="form-group">
-                    <label for="title">제목</label>
+                    <label for="category">카테고리</label>
+                    <select id="category" name="category" required></select>
+                </div>
+
+                <div id="photo-section" class="photo-section" style="display: none;">
+                    <div class="form-group">
+                        <label>기존 사진</label>
+                        <div id="existing-image-list" class="photo-preview-list"></div>
+                    </div>
+                    <div class="form-group">
+                        <label for="images">사진 추가</label>
+                        <input type="file" id="images" name="images" accept="image/jpeg,image/png,image/webp,image/gif" multiple>
+                        <p class="form-help">사진이 메인입니다. JPG, PNG, WEBP, GIF / 최대 20장</p>
+                    </div>
+                    <div id="new-image-preview-list" class="photo-preview-list"></div>
+                </div>
+
+                <div class="form-group">
+                    <label for="title" id="title-label">제목</label>
                     <input type="text" id="title" name="title" required maxlength="100" placeholder="제목을 입력하세요">
                 </div>
                 
                 <div class="form-group">
-                    <label for="content">내용</label>
+                    <label for="content" id="content-label">내용</label>
                     <textarea id="content" name="content" required rows="10" placeholder="내용을 입력하세요"></textarea>
                 </div>
                 
@@ -49,6 +67,8 @@
     <script>
         let currentPost = null;
         const currentUser = getUser();
+        let keepImages = [];
+        let newFiles = [];
 
         if (!requireAuth()) {
             throw new Error('Auth required');
@@ -92,9 +112,68 @@
         function displayPost(post) {
             document.getElementById('loading').style.display = 'none';
             document.getElementById('edit-form').style.display = 'block';
+            renderCategorySelect('category', post.category || '생각들', handleCategoryChange);
             document.getElementById('title').value = post.title;
             document.getElementById('content').value = post.content;
+            keepImages = [...(post.images || [])];
+            newFiles = [];
+            updatePostFormByCategory(post.category || '생각들');
+            renderExistingImages();
+            renderNewPreviews();
         }
+
+        function handleCategoryChange(category) {
+            updatePostFormByCategory(category);
+            if (!isPhotoCategory(category)) {
+                keepImages = [];
+                newFiles = [];
+                renderExistingImages();
+                renderNewPreviews();
+            }
+        }
+
+        function renderExistingImages() {
+            const items = keepImages.map((url, index) => ({
+                previewUrl: url,
+                index
+            }));
+
+            renderImagePreviewList(
+                document.getElementById('existing-image-list'),
+                items,
+                removeExistingImage
+            );
+        }
+
+        function renderNewPreviews() {
+            const items = newFiles.map((file, index) => ({
+                previewUrl: URL.createObjectURL(file),
+                index
+            }));
+
+            renderImagePreviewList(
+                document.getElementById('new-image-preview-list'),
+                items,
+                removeNewFile
+            );
+        }
+
+        function removeExistingImage(index) {
+            keepImages.splice(index, 1);
+            renderExistingImages();
+        }
+
+        function removeNewFile(index) {
+            newFiles.splice(index, 1);
+            renderNewPreviews();
+        }
+
+        document.getElementById('images').addEventListener('change', function() {
+            const files = readImageFiles(this);
+            newFiles = newFiles.concat(files);
+            this.value = '';
+            renderNewPreviews();
+        });
 
         function showError(message) {
             document.getElementById('loading').style.display = 'none';
@@ -113,20 +192,31 @@
         document.getElementById('edit-form').addEventListener('submit', async function(e) {
             e.preventDefault();
 
-            const data = {
-                title: document.getElementById('title').value,
-                content: document.getElementById('content').value
-            };
+            const category = document.getElementById('category').value;
+            const title = document.getElementById('title').value;
+            const content = document.getElementById('content').value;
 
-            if (!data.title.trim() || !data.content.trim()) {
+            if (isPhotoCategory(category) && keepImages.length + newFiles.length === 0) {
+                alert('사진을 1장 이상 남겨주세요.');
+                return;
+            }
+
+            if (!isPhotoCategory(category) && (!title.trim() || !content.trim())) {
                 alert('제목과 내용을 입력해주세요.');
                 return;
             }
 
+            const formData = buildPostFormData({
+                category,
+                title,
+                content,
+                keep_images: JSON.stringify(keepImages)
+            }, newFiles);
+
             try {
                 const response = await authFetch(`/api/posts/${currentPost.id}`, {
                     method: 'PUT',
-                    body: JSON.stringify(data)
+                    body: formData
                 });
 
                 const result = await response.json();

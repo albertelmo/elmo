@@ -12,14 +12,15 @@
             <h1>게시판</h1>
             <div class="header-actions">
                 <div id="user-header"></div>
-                <button onclick="location.href='write.html'" class="btn btn-primary">글쓰기</button>
+                <button onclick="goWrite()" class="btn btn-primary">글쓰기</button>
             </div>
         </header>
         
         <main>
             <div class="board-header">
+                <div id="category-tabs" class="category-tabs"></div>
                 <div class="board-info">
-                    <span>전체 게시글: <span id="total-count">0</span>개</span>
+                    <span id="category-label">전체</span> 게시글: <span id="total-count">0</span>개
                 </div>
             </div>
             
@@ -32,7 +33,7 @@
                 
                 <div id="no-posts" class="no-posts" style="display: none;">
                     <p>등록된 게시글이 없습니다.</p>
-                    <button onclick="location.href='write.html'" class="btn btn-primary">첫 게시글 작성하기</button>
+                    <button onclick="goWrite()" class="btn btn-primary">첫 게시글 작성하기</button>
                 </div>
             </div>
         </main>
@@ -46,15 +47,47 @@
 
         renderUserHeader('user-header');
 
+        let currentCategory = new URLSearchParams(window.location.search).get('category') || '';
+
+        if (currentCategory && !POST_CATEGORIES.includes(currentCategory)) {
+            currentCategory = '';
+        }
+
+        renderCategoryTabs('category-tabs', currentCategory, selectCategory);
+
+        function selectCategory(category) {
+            currentCategory = category;
+            const url = category ? `index.html?category=${encodeURIComponent(category)}` : 'index.html';
+            history.replaceState(null, '', url);
+            renderCategoryTabs('category-tabs', currentCategory, selectCategory);
+            loadPosts();
+        }
+
+        function goWrite() {
+            const url = currentCategory
+                ? `write.html?category=${encodeURIComponent(currentCategory)}`
+                : 'write.html';
+            location.href = url;
+        }
+
         async function loadPosts() {
+            const postsList = document.getElementById('posts-list');
+            const loading = document.getElementById('loading');
+            const noPosts = document.getElementById('no-posts');
+            const totalCount = document.getElementById('total-count');
+            const categoryLabel = document.getElementById('category-label');
+
+            postsList.innerHTML = '';
+            loading.style.display = 'block';
+            noPosts.style.display = 'none';
+            categoryLabel.textContent = currentCategory || '전체';
+
             try {
-                const response = await authFetch('/api/posts');
+                const url = currentCategory
+                    ? `/api/posts?category=${encodeURIComponent(currentCategory)}`
+                    : '/api/posts';
+                const response = await authFetch(url);
                 const posts = await response.json();
-                
-                const postsList = document.getElementById('posts-list');
-                const loading = document.getElementById('loading');
-                const noPosts = document.getElementById('no-posts');
-                const totalCount = document.getElementById('total-count');
                 
                 loading.style.display = 'none';
                 totalCount.textContent = posts.length;
@@ -66,15 +99,19 @@
                 
                 let html = '';
                 posts.forEach(post => {
-                    html += '<div class="post-item" onclick="viewPost(\'' + post.id + '\')">';
+                    const itemClass = isPhotoCategory(post.category) ? 'post-item photo-post' : 'post-item';
+                    html += '<div class="' + itemClass + '" onclick="viewPost(\'' + post.id + '\')">';
                     html += '<div class="post-header">';
+                    html += '<div class="post-title-row">';
+                    html += renderCategoryBadge(post.category);
                     html += '<h3 class="post-title">' + escapeHtml(post.title) + '</h3>';
+                    html += '</div>';
                     html += '<div class="post-meta">';
                     html += '<span class="author">' + escapeHtml(post.author) + '</span>';
                     html += '<span class="date">' + formatDate(post.created_at) + '</span>';
                     html += '<span class="views">조회 ' + (post.views || 0) + '</span>';
                     html += '</div></div>';
-                    html += '<div class="post-preview">' + escapeHtml(post.content.substring(0, 100)) + (post.content.length > 100 ? '...' : '') + '</div>';
+                    html += renderPostPreview(post);
                     html += '</div>';
                 });
                 postsList.innerHTML = html;
@@ -82,7 +119,7 @@
             } catch (error) {
                 if (error.message !== 'Unauthorized') {
                     console.error('게시글 로드 오류:', error);
-                    document.getElementById('loading').innerHTML = '게시글을 불러오는데 실패했습니다.';
+                    loading.innerHTML = '게시글을 불러오는데 실패했습니다.';
                 }
             }
         }
