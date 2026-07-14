@@ -10,7 +10,10 @@
     <div class="container">
         <header>
             <h1>게시글 수정</h1>
-            <button onclick="goBack()" class="btn btn-secondary">뒤로가기</button>
+            <div class="header-actions">
+                <div id="user-header"></div>
+                <button onclick="goBack()" class="btn btn-secondary">뒤로가기</button>
+            </div>
         </header>
         
         <main>
@@ -25,11 +28,6 @@
                 </div>
                 
                 <div class="form-group">
-                    <label for="author">작성자</label>
-                    <input type="text" id="author" name="author" required maxlength="20" placeholder="작성자명을 입력하세요">
-                </div>
-                
-                <div class="form-group">
                     <label for="content">내용</label>
                     <textarea id="content" name="content" required rows="10" placeholder="내용을 입력하세요"></textarea>
                 </div>
@@ -41,62 +39,69 @@
             </form>
             
             <div id="error-message" style="display: none; text-align: center; padding: 60px 20px; color: #ff6b6b;">
-                <h3>게시글을 찾을 수 없습니다.</h3>
+                <h3 id="error-text">게시글을 찾을 수 없습니다.</h3>
                 <button onclick="location.href='index.html'" class="btn btn-secondary" style="margin-top: 20px;">목록으로 돌아가기</button>
             </div>
         </main>
     </div>
 
+    <script src="auth.js"></script>
     <script>
         let currentPost = null;
-        
-        // URL에서 게시글 ID 가져오기
-        function getPostId() {
-            const urlParams = new URLSearchParams(window.location.search);
-            return urlParams.get('id');
+        const currentUser = getUser();
+
+        if (!requireAuth()) {
+            throw new Error('Auth required');
         }
-        
-        // 게시글 정보 로드
+
+        renderUserHeader('user-header');
+
+        function getPostId() {
+            return new URLSearchParams(window.location.search).get('id');
+        }
+
         async function loadPost() {
             const postId = getPostId();
             if (!postId) {
-                showError();
+                showError('게시글을 찾을 수 없습니다.');
                 return;
             }
-            
+
             try {
-                const response = await fetch(`/api/posts/${postId}`);
+                const response = await authFetch(`/api/posts/${postId}`);
                 const post = await response.json();
-                
+
                 if (response.ok) {
+                    if (!canModifyPost(currentUser, post)) {
+                        showError('수정 권한이 없습니다.');
+                        return;
+                    }
                     currentPost = post;
                     displayPost(post);
                 } else {
-                    showError();
+                    showError(post.message || '게시글을 찾을 수 없습니다.');
                 }
             } catch (error) {
-                console.error('게시글 로드 오류:', error);
-                showError();
+                if (error.message !== 'Unauthorized') {
+                    console.error('게시글 로드 오류:', error);
+                    showError('게시글을 불러오지 못했습니다.');
+                }
             }
         }
-        
-        // 게시글 정보 표시
+
         function displayPost(post) {
             document.getElementById('loading').style.display = 'none';
             document.getElementById('edit-form').style.display = 'block';
-            
             document.getElementById('title').value = post.title;
-            document.getElementById('author').value = post.author;
             document.getElementById('content').value = post.content;
         }
-        
-        // 에러 표시
-        function showError() {
+
+        function showError(message) {
             document.getElementById('loading').style.display = 'none';
+            document.getElementById('error-text').textContent = message;
             document.getElementById('error-message').style.display = 'block';
         }
-        
-        // 뒤로가기
+
         function goBack() {
             if (currentPost) {
                 location.href = `view.html?id=${currentPost.id}`;
@@ -104,35 +109,28 @@
                 location.href = 'index.html';
             }
         }
-        
-        // 폼 제출 처리
+
         document.getElementById('edit-form').addEventListener('submit', async function(e) {
             e.preventDefault();
-            
-            const formData = new FormData(this);
+
             const data = {
-                title: formData.get('title'),
-                author: formData.get('author'),
-                content: formData.get('content')
+                title: document.getElementById('title').value,
+                content: document.getElementById('content').value
             };
-            
-            // 유효성 검사
-            if (!data.title.trim() || !data.author.trim() || !data.content.trim()) {
-                alert('모든 항목을 입력해주세요.');
+
+            if (!data.title.trim() || !data.content.trim()) {
+                alert('제목과 내용을 입력해주세요.');
                 return;
             }
-            
+
             try {
-                const response = await fetch(`/api/posts/${currentPost.id}`, {
+                const response = await authFetch(`/api/posts/${currentPost.id}`, {
                     method: 'PUT',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
                     body: JSON.stringify(data)
                 });
-                
+
                 const result = await response.json();
-                
+
                 if (response.ok) {
                     alert(result.message);
                     location.href = `view.html?id=${currentPost.id}`;
@@ -140,38 +138,13 @@
                     alert(result.message);
                 }
             } catch (error) {
-                console.error('게시글 수정 오류:', error);
-                alert('게시글 수정에 실패했습니다.');
+                if (error.message !== 'Unauthorized') {
+                    console.error('게시글 수정 오류:', error);
+                    alert('게시글 수정에 실패했습니다.');
+                }
             }
         });
-        
-        // 제목 입력 시 실시간 글자 수 표시
-        document.getElementById('title').addEventListener('input', function() {
-            const maxLength = 100;
-            const currentLength = this.value.length;
-            const remaining = maxLength - currentLength;
-            
-            if (remaining < 10) {
-                this.style.borderColor = '#ff6b6b';
-            } else {
-                this.style.borderColor = '#e2e8f0';
-            }
-        });
-        
-        // 작성자 입력 시 실시간 글자 수 표시
-        document.getElementById('author').addEventListener('input', function() {
-            const maxLength = 20;
-            const currentLength = this.value.length;
-            const remaining = maxLength - currentLength;
-            
-            if (remaining < 3) {
-                this.style.borderColor = '#ff6b6b';
-            } else {
-                this.style.borderColor = '#e2e8f0';
-            }
-        });
-        
-        // 페이지 로드 시 게시글 로드
+
         document.addEventListener('DOMContentLoaded', loadPost);
     </script>
 </body>

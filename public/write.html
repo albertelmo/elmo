@@ -10,7 +10,10 @@
     <div class="container">
         <header>
             <h1>글쓰기</h1>
-            <button onclick="location.href='index.html'" class="btn btn-secondary">목록으로</button>
+            <div class="header-actions">
+                <div id="user-header"></div>
+                <button onclick="location.href='index.html'" class="btn btn-secondary">목록으로</button>
+            </div>
         </header>
         
         <main>
@@ -18,11 +21,6 @@
                 <div class="form-group">
                     <label for="title">제목</label>
                     <input type="text" id="title" name="title" required maxlength="100" placeholder="제목을 입력하세요">
-                </div>
-                
-                <div class="form-group">
-                    <label for="author">작성자</label>
-                    <input type="text" id="author" name="author" required maxlength="20" placeholder="작성자명을 입력하세요">
                 </div>
                 
                 <div class="form-group">
@@ -38,28 +36,30 @@
         </main>
     </div>
 
+    <script src="auth.js"></script>
     <script>
+        if (!requireAuth()) {
+            throw new Error('Auth required');
+        }
+
+        renderUserHeader('user-header');
+
         document.getElementById('write-form').addEventListener('submit', async function(e) {
             e.preventDefault();
             
-            const formData = new FormData(this);
             const data = {
-                title: formData.get('title'),
-                author: formData.get('author'),
-                content: formData.get('content')
+                title: document.getElementById('title').value,
+                content: document.getElementById('content').value
             };
             
-            if (!data.title.trim() || !data.author.trim() || !data.content.trim()) {
-                alert('모든 항목을 입력해주세요.');
+            if (!data.title.trim() || !data.content.trim()) {
+                alert('제목과 내용을 입력해주세요.');
                 return;
             }
             
             try {
-                const response = await fetch('/api/posts', {
+                const response = await authFetch('/api/posts', {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
                     body: JSON.stringify(data)
                 });
                 
@@ -72,32 +72,10 @@
                     alert(result.message);
                 }
             } catch (error) {
-                console.error('게시글 작성 오류:', error);
-                alert('게시글 작성에 실패했습니다.');
-            }
-        });
-        
-        document.getElementById('title').addEventListener('input', function() {
-            const maxLength = 100;
-            const currentLength = this.value.length;
-            const remaining = maxLength - currentLength;
-            
-            if (remaining < 10) {
-                this.style.borderColor = '#ff6b6b';
-            } else {
-                this.style.borderColor = '#e2e8f0';
-            }
-        });
-        
-        document.getElementById('author').addEventListener('input', function() {
-            const maxLength = 20;
-            const currentLength = this.value.length;
-            const remaining = maxLength - currentLength;
-            
-            if (remaining < 3) {
-                this.style.borderColor = '#ff6b6b';
-            } else {
-                this.style.borderColor = '#e2e8f0';
+                if (error.message !== 'Unauthorized') {
+                    console.error('게시글 작성 오류:', error);
+                    alert('게시글 작성에 실패했습니다.');
+                }
             }
         });
     </script>

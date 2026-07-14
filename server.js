@@ -2,9 +2,11 @@
 const cors = require('cors');
 const path = require('path');
 const db = require('./database');
+const { verifyAuth, canModifyPost, signToken } = require('./middleware');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+const ADMIN_USERNAME = (process.env.ADMIN_USERNAME || '').trim();
 
 app.use(cors());
 app.use(express.json());
@@ -12,7 +14,106 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 db.initializeDatabase();
 
-app.get('/api/posts', async (req, res) => {
+function resolveRole(username) {
+    if (ADMIN_USERNAME && username === ADMIN_USERNAME) {
+        return 'admin';
+    }
+    return 'user';
+}
+
+app.post('/api/auth/register', async (req, res) => {
+    try {
+        const { username, password, name } = req.body;
+
+        if (!username || !password || !name) {
+            return res.status(400).json({ message: '아이디, 비밀번호, 이름을 모두 입력해주세요.' });
+        }
+
+        const trimmedUsername = username.trim();
+        const trimmedName = name.trim();
+
+        if (trimmedUsername.length < 3 || trimmedUsername.length > 50) {
+            return res.status(400).json({ message: '아이디는 3~50자여야 합니다.' });
+        }
+        if (password.length < 6) {
+            return res.status(400).json({ message: '비밀번호는 6자 이상이어야 합니다.' });
+        }
+        if (trimmedName.length < 1 || trimmedName.length > 50) {
+            return res.status(400).json({ message: '이름은 1~50자여야 합니다.' });
+        }
+
+        const existingUser = await db.getUserByUsername(trimmedUsername);
+        if (existingUser) {
+            return res.status(400).json({ message: '이미 사용 중인 아이디입니다.' });
+        }
+
+        const role = resolveRole(trimmedUsername);
+        const user = await db.createUser(trimmedUsername, password, trimmedName, role);
+        const token = signToken(user);
+
+        res.status(201).json({
+            message: '회원가입이 완료되었습니다.',
+            token,
+            user: {
+                id: user.id,
+                username: user.username,
+                name: user.name,
+                role: user.role
+            }
+        });
+    } catch (error) {
+        console.error('[API] 회원가입 오류:', error);
+        if (error.code === '23505') {
+            return res.status(400).json({ message: '이미 사용 중인 아이디입니다.' });
+        }
+        res.status(500).json({ message: '회원가입 중 오류가 발생했습니다.' });
+    }
+});
+
+app.post('/api/auth/login', async (req, res) => {
+    try {
+        const { username, password } = req.body;
+
+        if (!username || !password) {
+            return res.status(400).json({ message: '아이디와 비밀번호를 입력해주세요.' });
+        }
+
+        const user = await db.verifyPassword(username.trim(), password);
+        if (!user) {
+            return res.status(401).json({ message: '아이디 또는 비밀번호가 올바르지 않습니다.' });
+        }
+
+        const token = signToken(user);
+        res.json({
+            message: '로그인 성공',
+            token,
+            user
+        });
+    } catch (error) {
+        console.error('[API] 로그인 오류:', error);
+        res.status(500).json({ message: '로그인 중 오류가 발생했습니다.' });
+    }
+});
+
+app.get('/api/auth/me', verifyAuth, async (req, res) => {
+    try {
+        const user = await db.getUserById(req.user.userId);
+        if (!user) {
+            return res.status(401).json({ message: '사용자를 찾을 수 없습니다.' });
+        }
+        res.json({
+            id: user.id,
+            username: user.username,
+            name: user.name,
+            role: user.role
+        });
+    } catch (error) {
+        console.error('[API] 사용자 정보 조회 오류:', error);
+        res.status(500).json({ message: '사용자 정보를 불러오지 못했습니다.' });
+    }
+});
+
+app.get('/api/posts', verifyAuth, async (req, res) => {
     try {
         const posts = await db.getPosts();
         res.json(posts);
@@ -22,18 +123,18 @@ app.get('/api/posts', async (req, res) => {
     }
 });
 
-app.get('/api/posts/:id', async (req, res) => {
+app.get('/api/posts/:id', verifyAuth, async (req, res) => {
     try {
         const postId = req.params.id;
         const post = await db.getPostById(postId);
-        
+
         if (!post) {
             return res.status(404).json({ message: '게시글을 찾을 수 없습니다.' });
         }
-        
+
         await db.incrementViews(postId);
         post.views = post.views + 1;
-        
+
         res.json(post);
     } catch (error) {
         console.error('[API] 게시글 상세 조회 오류:', error);
@@ -41,15 +142,20 @@ app.get('/api/posts/:id', async (req, res) => {
     }
 });
 
-app.post('/api/posts', async (req, res) => {
+app.post('/api/posts', verifyAuth, async (req, res) => {
     try {
-        const { title, content, author } = req.body;
-        
-        if (!title || !content || !author) {
-            return res.status(400).json({ message: '제목, 내용, 작성자를 모두 입력해주세요.' });
+        const { title, content } = req.body;
+
+        if (!title || !content) {
+            return res.status(400).json({ message: '제목과 내용을 입력해주세요.' });
         }
-        
-        const newPost = await db.createPost(title.trim(), content.trim(), author.trim());
+
+        const newPost = await db.createPost(
+            title.trim(),
+            content.trim(),
+            req.user.name,
+            req.user.userId
+        );
         res.json({ message: '게시글이 작성되었습니다.', post: newPost });
     } catch (error) {
         console.error('[API] 게시글 작성 오류:', error);
@@ -57,21 +163,25 @@ app.post('/api/posts', async (req, res) => {
     }
 });
 
-app.put('/api/posts/:id', async (req, res) => {
+app.put('/api/posts/:id', verifyAuth, async (req, res) => {
     try {
         const postId = req.params.id;
-        const { title, content, author } = req.body;
-        
-        if (!title || !content || !author) {
-            return res.status(400).json({ message: '제목, 내용, 작성자를 모두 입력해주세요.' });
+        const { title, content } = req.body;
+
+        if (!title || !content) {
+            return res.status(400).json({ message: '제목과 내용을 입력해주세요.' });
         }
-        
-        const updatedPost = await db.updatePost(postId, title.trim(), content.trim(), author.trim());
-        
-        if (!updatedPost) {
+
+        const post = await db.getPostById(postId);
+        if (!post) {
             return res.status(404).json({ message: '게시글을 찾을 수 없습니다.' });
         }
-        
+
+        if (!canModifyPost(req.user, post)) {
+            return res.status(403).json({ message: '수정 권한이 없습니다.' });
+        }
+
+        const updatedPost = await db.updatePost(postId, title.trim(), content.trim());
         res.json({ message: '게시글이 수정되었습니다.', post: updatedPost });
     } catch (error) {
         console.error('[API] 게시글 수정 오류:', error);
@@ -79,15 +189,20 @@ app.put('/api/posts/:id', async (req, res) => {
     }
 });
 
-app.delete('/api/posts/:id', async (req, res) => {
+app.delete('/api/posts/:id', verifyAuth, async (req, res) => {
     try {
         const postId = req.params.id;
-        const deleted = await db.deletePost(postId);
-        
-        if (!deleted) {
+        const post = await db.getPostById(postId);
+
+        if (!post) {
             return res.status(404).json({ message: '게시글을 찾을 수 없습니다.' });
         }
-        
+
+        if (!canModifyPost(req.user, post)) {
+            return res.status(403).json({ message: '삭제 권한이 없습니다.' });
+        }
+
+        await db.deletePost(postId);
         res.json({ message: '게시글이 삭제되었습니다.' });
     } catch (error) {
         console.error('[API] 게시글 삭제 오류:', error);
@@ -97,4 +212,7 @@ app.delete('/api/posts/:id', async (req, res) => {
 
 app.listen(PORT, () => {
     console.log(`[Board] 서버가 포트 ${PORT}에서 실행 중입니다.`);
+    if (ADMIN_USERNAME) {
+        console.log(`[Board] ADMIN_USERNAME: ${ADMIN_USERNAME}`);
+    }
 });

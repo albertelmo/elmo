@@ -10,7 +10,10 @@
     <div class="container">
         <header>
             <h1>게시판</h1>
-            <button onclick="location.href='write.html'" class="btn btn-primary">글쓰기</button>
+            <div class="header-actions">
+                <div id="user-header"></div>
+                <button onclick="location.href='write.html'" class="btn btn-primary">글쓰기</button>
+            </div>
         </header>
         
         <main>
@@ -21,8 +24,7 @@
             </div>
             
             <div class="posts-container">
-                <div id="posts-list" class="posts-list">
-                </div>
+                <div id="posts-list" class="posts-list"></div>
                 
                 <div id="loading" class="loading">
                     게시글을 불러오는 중...
@@ -36,10 +38,17 @@
         </main>
     </div>
 
+    <script src="auth.js"></script>
     <script>
+        if (!requireAuth()) {
+            throw new Error('Auth required');
+        }
+
+        renderUserHeader('user-header');
+
         async function loadPosts() {
             try {
-                const response = await fetch('/api/posts');
+                const response = await authFetch('/api/posts');
                 const posts = await response.json();
                 
                 const postsList = document.getElementById('posts-list');
@@ -71,33 +80,16 @@
                 postsList.innerHTML = html;
                 
             } catch (error) {
-                console.error('게시글 로드 오류:', error);
-                document.getElementById('loading').innerHTML = '게시글을 불러오는데 실패했습니다.';
+                if (error.message !== 'Unauthorized') {
+                    console.error('게시글 로드 오류:', error);
+                    document.getElementById('loading').innerHTML = '게시글을 불러오는데 실패했습니다.';
+                }
             }
         }
         
         function viewPost(id) {
             location.href = 'view.html?id=' + id;
         }
-        
-        function escapeHtml(text) {
-            const div = document.createElement('div');
-            div.textContent = text;
-            return div.innerHTML;
-        }
-        
-        function formatDate(dateString) {
-    const date = new Date(dateString);
-    // 한국시간으로 변환 (UTC+9)
-    const koreanTime = new Date(date.getTime() + (9 * 60 * 60 * 1000));
-    
-    const year = koreanTime.getUTCFullYear();
-    const month = String(koreanTime.getUTCMonth() + 1).padStart(2, '0');
-    const day = String(koreanTime.getUTCDate()).padStart(2, '0');
-    const hours = String(koreanTime.getUTCHours()).padStart(2, '0');
-    const minutes = String(koreanTime.getUTCMinutes()).padStart(2, '0');
-    return `${year}-${month}-${day} ${hours}:${minutes}`;
-}
         
         document.addEventListener('DOMContentLoaded', loadPosts);
     </script>

@@ -1,6 +1,8 @@
 ﻿const { Pool } = require('pg');
+const bcrypt = require('bcrypt');
 
-// Render: DATABASE_URL 사용 / 로컬: 개별 환경변수 또는 기본값
+const SALT_ROUNDS = 10;
+
 const pool = process.env.DATABASE_URL
     ? new Pool({
           connectionString: process.env.DATABASE_URL,
@@ -21,15 +23,31 @@ async function initializeDatabase() {
         await client.query(`CREATE EXTENSION IF NOT EXISTS pgcrypto`);
 
         await client.query(`
+            CREATE TABLE IF NOT EXISTS users (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                username VARCHAR(50) UNIQUE NOT NULL,
+                password_hash VARCHAR(255) NOT NULL,
+                name VARCHAR(50) NOT NULL,
+                role VARCHAR(10) NOT NULL DEFAULT 'user',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        `);
+
+        await client.query(`
             CREATE TABLE IF NOT EXISTS posts (
                 id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
                 title VARCHAR(100) NOT NULL,
                 content TEXT NOT NULL,
                 author VARCHAR(20) NOT NULL,
+                user_id UUID REFERENCES users(id) ON DELETE SET NULL,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 views INTEGER DEFAULT 0
             )
+        `);
+
+        await client.query(`
+            ALTER TABLE posts ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES users(id) ON DELETE SET NULL
         `);
 
         console.log('[DB] 데이터베이스 테이블이 초기화되었습니다.');
@@ -39,91 +57,102 @@ async function initializeDatabase() {
     }
 }
 
-async function getPosts() {
-    try {
-        const result = await pool.query(`
-            SELECT id, title, content, author, created_at, updated_at, views
-            FROM posts 
-            ORDER BY created_at DESC
-        `);
-        return result.rows;
-    } catch (error) {
-        console.error('[DB] 게시글 목록 조회 오류:', error);
-        throw error;
+async function getUserByUsername(username) {
+    const result = await pool.query(
+        `SELECT id, username, password_hash, name, role, created_at FROM users WHERE username = $1`,
+        [username]
+    );
+    return result.rows[0];
+}
+
+async function getUserById(id) {
+    const result = await pool.query(
+        `SELECT id, username, name, role, created_at FROM users WHERE id = $1`,
+        [id]
+    );
+    return result.rows[0];
+}
+
+async function createUser(username, password, name, role) {
+    const passwordHash = await bcrypt.hash(password, SALT_ROUNDS);
+    const result = await pool.query(
+        `INSERT INTO users (username, password_hash, name, role)
+         VALUES ($1, $2, $3, $4)
+         RETURNING id, username, name, role, created_at`,
+        [username, passwordHash, name, role]
+    );
+    return result.rows[0];
+}
+
+async function verifyPassword(username, password) {
+    const user = await getUserByUsername(username);
+    if (!user) {
+        return null;
     }
+    const valid = await bcrypt.compare(password, user.password_hash);
+    if (!valid) {
+        return null;
+    }
+    return {
+        id: user.id,
+        username: user.username,
+        name: user.name,
+        role: user.role
+    };
+}
+
+async function getPosts() {
+    const result = await pool.query(`
+        SELECT id, title, content, author, user_id, created_at, updated_at, views
+        FROM posts
+        ORDER BY created_at DESC
+    `);
+    return result.rows;
 }
 
 async function getPostById(id) {
-    try {
-        const result = await pool.query(`
-            SELECT id, title, content, author, created_at, updated_at, views
-            FROM posts 
-            WHERE id = $1
-        `, [id]);
-        return result.rows[0];
-    } catch (error) {
-        console.error('[DB] 게시글 상세 조회 오류:', error);
-        throw error;
-    }
+    const result = await pool.query(`
+        SELECT id, title, content, author, user_id, created_at, updated_at, views
+        FROM posts
+        WHERE id = $1
+    `, [id]);
+    return result.rows[0];
 }
 
-async function createPost(title, content, author) {
-    try {
-        const result = await pool.query(`
-            INSERT INTO posts (title, content, author)
-            VALUES ($1, $2, $3)
-            RETURNING id, title, content, author, created_at, updated_at, views
-        `, [title, content, author]);
-        return result.rows[0];
-    } catch (error) {
-        console.error('[DB] 게시글 작성 오류:', error);
-        throw error;
-    }
+async function createPost(title, content, author, userId) {
+    const result = await pool.query(`
+        INSERT INTO posts (title, content, author, user_id)
+        VALUES ($1, $2, $3, $4)
+        RETURNING id, title, content, author, user_id, created_at, updated_at, views
+    `, [title, content, author, userId]);
+    return result.rows[0];
 }
 
-async function updatePost(id, title, content, author) {
-    try {
-        const result = await pool.query(`
-            UPDATE posts 
-            SET title = $1, content = $2, author = $3, updated_at = CURRENT_TIMESTAMP
-            WHERE id = $4
-            RETURNING id, title, content, author, created_at, updated_at, views
-        `, [title, content, author, id]);
-        return result.rows[0];
-    } catch (error) {
-        console.error('[DB] 게시글 수정 오류:', error);
-        throw error;
-    }
+async function updatePost(id, title, content) {
+    const result = await pool.query(`
+        UPDATE posts
+        SET title = $1, content = $2, updated_at = CURRENT_TIMESTAMP
+        WHERE id = $3
+        RETURNING id, title, content, author, user_id, created_at, updated_at, views
+    `, [title, content, id]);
+    return result.rows[0];
 }
 
 async function deletePost(id) {
-    try {
-        const result = await pool.query(`
-            DELETE FROM posts 
-            WHERE id = $1
-        `, [id]);
-        return result.rowCount > 0;
-    } catch (error) {
-        console.error('[DB] 게시글 삭제 오류:', error);
-        throw error;
-    }
+    const result = await pool.query(`DELETE FROM posts WHERE id = $1`, [id]);
+    return result.rowCount > 0;
 }
 
 async function incrementViews(id) {
-    try {
-        await pool.query(`
-            UPDATE posts 
-            SET views = views + 1
-            WHERE id = $1
-        `, [id]);
-    } catch (error) {
-        console.error('[DB] 조회수 증가 오류:', error);
-        throw error;
-    }
+    await pool.query(`UPDATE posts SET views = views + 1 WHERE id = $1`, [id]);
 }
 
 module.exports = {
     initializeDatabase,
+    getUserByUsername,
+    getUserById,
+    createUser,
+    verifyPassword,
     getPosts,
     getPostById,
     createPost,
