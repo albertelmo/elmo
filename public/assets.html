@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>자산관리 - 게시판</title>
+    <link rel="stylesheet" href="style.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0/dist/chartjs-plugin-datalabels.min.js"></script>
+</head>
+<body>
+    <div class="container">
+        <nav class="app-tabs">
+            <a href="index.html" class="app-tab">게시판</a>
+            <a href="assets.html" class="app-tab active">자산관리</a>
+        </nav>
+
+        <header>
+            <h1>자산관리</h1>
+            <div class="header-actions">
+                <div id="user-header"></div>
+                <button onclick="location.href='assets-write.html'" class="btn btn-primary">자산 입력</button>
+            </div>
+        </header>
+
+        <main>
+            <div class="board-header">
+                <div id="owner-tabs" class="category-tabs"></div>
+                <div class="board-info">
+                    입력 기록 <span id="snapshot-count">0</span>건
+                </div>
+            </div>
+
+            <div id="loading" class="loading">자산 정보를 불러오는 중...</div>
+
+            <div id="empty-state" class="no-posts" style="display: none;">
+                <p>아직 입력된 자산 정보가 없습니다.</p>
+                <button onclick="location.href='assets-write.html'" class="btn btn-primary">첫 자산 입력하기</button>
+            </div>
+
+            <div id="asset-content" style="display: none;">
+                <div class="asset-summary-cards" id="summary-cards"></div>
+
+                <div class="chart-section-header">
+                    <h3>자산 구성 비율</h3>
+                    <div class="chart-controls">
+                        <label for="snapshot-select">기준 시점</label>
+                        <select id="snapshot-select"></select>
+                    </div>
+                </div>
+                <div class="chart-grid" id="composition-grid"></div>
+
+                <div class="chart-section-header">
+                    <h3>자산 변경 추이</h3>
+                    <div class="chart-controls" id="trend-mode-tabs"></div>
+                </div>
+                <div class="chart-card wide">
+                    <canvas id="chart-trend"></canvas>
+                </div>
+
+                <div class="chart-section-header">
+                    <h3>입력 기록</h3>
+                </div>
+                <div class="snapshot-table-wrap">
+                    <table class="snapshot-table">
+                        <thead>
+                            <tr>
+                                <th>입력일</th>
+                                <th>환율</th>
+                                <th>총자산</th>
+                                <th>김재식</th>
+                                <th>임지은</th>
+                                <th>메모</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody id="snapshot-table-body"></tbody>
+                    </table>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script src="auth.js"></script>
+    <script src="assets.js"></script>
+    <script>
+        if (!requireAuth()) {
+            throw new Error('Auth required');
+        }
+
+        renderUserHeader('user-header');
+
+        let allSnapshots = [];
+        let currentOwnerFilter = '';
+        let currentSnapshotId = null;
+        let currentTrendMode = 'total';
+        let compositionCharts = {};
+        let trendChart = null;
+
+        renderOwnerTabs();
+        renderTrendModeTabs();
+        loadSnapshots();
+
+        function renderOwnerTabs() {
+            const container = document.getElementById('owner-tabs');
+            const tabs = [{ label: '전체', value: '' }, ...ASSET_OWNERS.map(owner => ({ label: owner.label, value: owner.key }))];
+
+            container.innerHTML = tabs.map(tab => {
+                const activeClass = tab.value === currentOwnerFilter ? ' active' : '';
+                return `<button type="button" class="category-tab${activeClass}" data-owner="${tab.value}">${tab.label}</button>`;
+            }).join('');
+
+            container.querySelectorAll('.category-tab').forEach(button => {
+                button.addEventListener('click', () => {
+                    currentOwnerFilter = button.dataset.owner;
+                    renderOwnerTabs();
+                    renderAll();
+                });
+            });
+        }
+
+        function renderTrendModeTabs() {
+            const container = document.getElementById('trend-mode-tabs');
+            const modes = [
+                { label: '총자산', value: 'total' },
+                { label: '종류별', value: 'type' },
+                { label: '소유자별', value: 'owner' }
+            ];
+
+            container.innerHTML = modes.map(mode => {
+                const activeClass = mode.value === currentTrendMode ? ' active' : '';
+                return `<button type="button" class="category-tab${activeClass}" data-mode="${mode.value}">${mode.label}</button>`;
+            }).join('');
+
+            container.querySelectorAll('.category-tab').forEach(button => {
+                button.addEventListener('click', () => {
+                    currentTrendMode = button.dataset.mode;
+                    renderTrendModeTabs();
+                    renderTrend();
+                });
+            });
+        }
+
+        async function loadSnapshots() {
+            try {
+                const response = await authFetch('/api/assets/snapshots');
+                const data = await response.json();
+
+                if (!response.ok) {
+                    alert(data.message || '자산 정보를 불러오지 못했습니다.');
+                    return;
+                }
+
+                allSnapshots = data;
+                document.getElementById('loading').style.display = 'none';
+                document.getElementById('snapshot-count').textContent = allSnapshots.length;
+
+                if (allSnapshots.length === 0) {
+                    document.getElementById('empty-state').style.display = 'block';
+                    document.getElementById('asset-content').style.display = 'none';
+                    return;
+                }
+
+                document.getElementById('empty-state').style.display = 'none';
+                document.getElementById('asset-content').style.display = 'block';
+                currentSnapshotId = allSnapshots[allSnapshots.length - 1].id;
+                renderSnapshotSelect();
+                renderAll();
+            } catch (error) {
+                if (error.message !== 'Unauthorized') {
+                    console.error('자산 정보 로드 오류:', error);
+                    document.getElementById('loading').textContent = '자산 정보를 불러오지 못했습니다.';
+                }
+            }
+        }
+
+        function renderSnapshotSelect() {
+            const select = document.getElementById('snapshot-select');
+            const sorted = [...allSnapshots].reverse();
+
+            select.innerHTML = sorted.map(snapshot => `<option value="${snapshot.id}">${snapshot.recorded_at}</option>`).join('');
+            select.value = currentSnapshotId;
+            select.onchange = () => {
+                currentSnapshotId = select.value;
+                renderComposition();
+            };
+        }
+
+        function renderAll() {
+            renderSummaryCards();
+            renderComposition();
+            renderTrend();
+            renderSnapshotTable();
+        }
+
+        function renderSummaryCards() {
+            const latest = allSnapshots[allSnapshots.length - 1];
+            const container = document.getElementById('summary-cards');
+            const jaesikTotal = computeOwnerTotal(latest.entries, 'jaesik');
+            const jieunTotal = computeOwnerTotal(latest.entries, 'jieun');
+            const cards = [];
+
+            if (!currentOwnerFilter || currentOwnerFilter === 'jaesik') {
+                cards.push({ label: `${getOwnerLabel('jaesik')} 총자산`, value: jaesikTotal });
+            }
+            if (!currentOwnerFilter || currentOwnerFilter === 'jieun') {
+                cards.push({ label: `${getOwnerLabel('jieun')} 총자산`, value: jieunTotal });
+            }
+            if (!currentOwnerFilter) {
+                cards.push({ label: '전체 총자산', value: jaesikTotal + jieunTotal });
+            }
+
+            container.innerHTML = cards.map(card => `
+                <div class="summary-card">
+                    <div class="summary-label">${card.label}</div>
+                    <div class="summary-value">${formatKrw(card.value)}</div>
+                    <div class="summary-sub">${latest.recorded_at} 기준 · 환율 ${Number(latest.usd_krw).toLocaleString('ko-KR')}원</div>
+                </div>
+            `).join('');
+        }
+
+        function renderComposition() {
+            const snapshot = allSnapshots.find(item => item.id === currentSnapshotId) || allSnapshots[allSnapshots.length - 1];
+            const grid = document.getElementById('composition-grid');
+            const cards = [];
+
+            if (!currentOwnerFilter || currentOwnerFilter === 'jaesik') {
+                cards.push({ id: 'chart-jaesik', title: `${getOwnerLabel('jaesik')} 자산구성`, owner: 'jaesik' });
+            }
+            if (!currentOwnerFilter || currentOwnerFilter === 'jieun') {
+                cards.push({ id: 'chart-jieun', title: `${getOwnerLabel('jieun')} 자산구성`, owner: 'jieun' });
+            }
+            if (!currentOwnerFilter) {
+                cards.push({ id: 'chart-total', title: '전체 자산구성', owner: null });
+            }
+
+            grid.innerHTML = cards.map(card => `
+                <div class="chart-card">
+                    <h3>${card.title}</h3>
+                    <canvas id="${card.id}"></canvas>
+                </div>
+            `).join('');
+
+            cards.forEach(card => {
+                const composition = card.owner
+                    ? computeOwnerComposition(snapshot.entries, card.owner)
+                    : computeTotalComposition(snapshot.entries);
+                compositionCharts[card.id] = renderPieChart(card.id, composition, compositionCharts[card.id]);
+            });
+        }
+
+        function renderTrend() {
+            const history = buildHistorySeries(allSnapshots);
+            trendChart = renderTrendChart('chart-trend', history, currentTrendMode, trendChart);
+        }
+
+        function renderSnapshotTable() {
+            const tbody = document.getElementById('snapshot-table-body');
+            const sorted = [...allSnapshots].reverse();
+
+            tbody.innerHTML = sorted.map(snapshot => {
+                const jaesikTotal = computeOwnerTotal(snapshot.entries, 'jaesik');
+                const jieunTotal = computeOwnerTotal(snapshot.entries, 'jieun');
+                return `
+                    <tr>
+                        <td>${snapshot.recorded_at}</td>
+                        <td>${Number(snapshot.usd_krw).toLocaleString('ko-KR')}원</td>
+                        <td>${formatKrw(jaesikTotal + jieunTotal)}</td>
+                        <td>${formatKrw(jaesikTotal)}</td>
+                        <td>${formatKrw(jieunTotal)}</td>
+                        <td>${escapeHtml(snapshot.note || '')}</td>
+                        <td class="snapshot-table-actions">
+                            <button type="button" class="btn btn-secondary btn-sm" onclick="editSnapshot('${snapshot.id}')">수정</button>
+                            <button type="button" class="btn btn-danger btn-sm" onclick="deleteSnapshot('${snapshot.id}')">삭제</button>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        function editSnapshot(id) {
+            location.href = `assets-write.html?id=${id}`;
+        }
+
+        async function deleteSnapshot(id) {
+            if (!confirm('이 자산 입력 기록을 삭제하시겠습니까?')) {
+                return;
+            }
+
+            try {
+                const response = await authFetch(`/api/assets/snapshots/${id}`, { method: 'DELETE' });
+                const result = await response.json();
+
+                if (response.ok) {
+                    loadSnapshots();
+                } else {
+                    alert(result.message);
+                }
+            } catch (error) {
+                if (error.message !== 'Unauthorized') {
+                    console.error('자산 삭제 오류:', error);
+                    alert('삭제에 실패했습니다.');
+                }
+            }
+        }
+    </script>
+</body>
+</html>

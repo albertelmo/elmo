@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>자산 입력 - 게시판</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <nav class="app-tabs">
+            <a href="index.html" class="app-tab">게시판</a>
+            <a href="assets.html" class="app-tab active">자산관리</a>
+        </nav>
+
+        <header>
+            <h1 id="page-title">자산 입력</h1>
+            <div class="header-actions">
+                <div id="user-header"></div>
+                <button onclick="location.href='assets.html'" class="btn btn-secondary">목록으로</button>
+            </div>
+        </header>
+
+        <main>
+            <form id="asset-form" class="write-form">
+                <div class="form-group">
+                    <label for="recorded-at">입력일</label>
+                    <input type="date" id="recorded-at" required>
+                </div>
+
+                <div class="form-group">
+                    <label for="usd-krw">달러환율 (원/USD)</label>
+                    <input type="number" id="usd-krw" step="0.01" min="0" placeholder="예: 1380.50" required>
+                </div>
+
+                <div class="form-group">
+                    <label for="note">메모 (선택)</label>
+                    <textarea id="note" rows="2" placeholder="메모를 입력하세요 (선택)"></textarea>
+                </div>
+
+                <div id="owner-sections"></div>
+
+                <div class="form-actions">
+                    <button type="submit" class="btn btn-primary">저장</button>
+                    <button type="button" class="btn btn-secondary" onclick="location.href='assets.html'">취소</button>
+                </div>
+            </form>
+        </main>
+    </div>
+
+    <script src="auth.js"></script>
+    <script src="assets.js"></script>
+    <script>
+        if (!requireAuth()) {
+            throw new Error('Auth required');
+        }
+
+        renderUserHeader('user-header');
+
+        const editingId = new URLSearchParams(window.location.search).get('id');
+
+        renderOwnerSections();
+
+        if (editingId) {
+            document.getElementById('page-title').textContent = '자산 수정';
+            loadSnapshot(editingId);
+        } else {
+            document.getElementById('recorded-at').value = getKstDateString();
+        }
+
+        function renderOwnerSections() {
+            const container = document.getElementById('owner-sections');
+
+            container.innerHTML = ASSET_OWNERS.map(owner => `
+                <div class="asset-owner-section">
+                    <h3 class="asset-owner-title">${owner.label}</h3>
+                    ${ASSET_TYPE_DEFS.map(type => renderAssetEntryRow(owner.key, type)).join('')}
+                </div>
+            `).join('');
+
+            container.querySelectorAll('.amount-usd-input').forEach(input => {
+                input.addEventListener('input', updateForeignPreview);
+            });
+            document.getElementById('usd-krw').addEventListener('input', updateAllForeignPreviews);
+        }
+
+        function renderAssetEntryRow(ownerKey, type) {
+            const rowId = `${ownerKey}-${type.key}`;
+
+            if (type.isForeign) {
+                return `
+                    <div class="asset-entry-row" data-owner="${ownerKey}" data-type="${type.key}">
+                        <div class="asset-entry-label">${type.label}</div>
+                        <div class="asset-entry-fields">
+                            <input type="number" id="amount-usd-${rowId}" class="amount-usd-input" min="0" step="0.01" placeholder="달러 금액 ($)">
+                            <div class="computed-krw" id="computed-krw-${rowId}">≈ 0원</div>
+                            <input type="number" id="return-rate-${rowId}" class="return-rate-input" step="0.01" placeholder="수익률 (%)">
+                        </div>
+                    </div>
+                `;
+            }
+
+            return `
+                <div class="asset-entry-row" data-owner="${ownerKey}" data-type="${type.key}">
+                    <div class="asset-entry-label">${type.label}</div>
+                    <div class="asset-entry-fields">
+                        <input type="number" id="amount-krw-${rowId}" class="amount-krw-input" min="0" step="1" placeholder="금액 (원)">
+                        ${type.hasReturnRate ? `<input type="number" id="return-rate-${rowId}" class="return-rate-input" step="0.01" placeholder="수익률 (%)">` : '<div class="asset-entry-spacer"></div>'}
+                    </div>
+                </div>
+            `;
+        }
+
+        function updateAllForeignPreviews() {
+            document.querySelectorAll('.amount-usd-input').forEach(input => updateForeignPreviewFor(input));
+        }
+
+        function updateForeignPreview(event) {
+            updateForeignPreviewFor(event.target);
+        }
+
+        function updateForeignPreviewFor(input) {
+            const row = input.closest('.asset-entry-row');
+            const rowId = `${row.dataset.owner}-${row.dataset.type}`;
+            const usdKrw = Number(document.getElementById('usd-krw').value) || 0;
+            const usdAmount = Number(input.value) || 0;
+            const krwAmount = Math.round(usdAmount * usdKrw);
+            document.getElementById(`computed-krw-${rowId}`).textContent = `≈ ${formatKrw(krwAmount)}`;
+        }
+
+        async function loadSnapshot(id) {
+            try {
+                const response = await authFetch(`/api/assets/snapshots/${id}`);
+                const snapshot = await response.json();
+
+                if (!response.ok) {
+                    alert(snapshot.message || '자산 정보를 불러오지 못했습니다.');
+                    location.href = 'assets.html';
+                    return;
+                }
+
+                fillForm(snapshot);
+            } catch (error) {
+                if (error.message !== 'Unauthorized') {
+                    console.error('자산 정보 로드 오류:', error);
+                    alert('자산 정보를 불러오지 못했습니다.');
+                }
+            }
+        }
+
+        function fillForm(snapshot) {
+            document.getElementById('recorded-at').value = String(snapshot.recorded_at).substring(0, 10);
+            document.getElementById('usd-krw').value = snapshot.usd_krw;
+            document.getElementById('note').value = snapshot.note || '';
+
+            snapshot.entries.forEach(entry => {
+                const rowId = `${entry.owner}-${entry.asset_type}`;
+                const type = getAssetTypeDef(entry.asset_type);
+
+                if (type && type.isForeign) {
+                    const usdInput = document.getElementById(`amount-usd-${rowId}`);
+                    if (usdInput) {
+                        usdInput.value = entry.amount_usd;
+                        updateForeignPreviewFor(usdInput);
+                    }
+                } else {
+                    const krwInput = document.getElementById(`amount-krw-${rowId}`);
+                    if (krwInput) {
+                        krwInput.value = entry.amount_krw;
+                    }
+                }
+
+                const rateInput = document.getElementById(`return-rate-${rowId}`);
+                if (rateInput && entry.return_rate !== null) {
+                    rateInput.value = entry.return_rate;
+                }
+            });
+        }
+
+        function collectEntries() {
+            const entries = [];
+
+            document.querySelectorAll('.asset-entry-row').forEach(row => {
+                const owner = row.dataset.owner;
+                const assetType = row.dataset.type;
+                const rowId = `${owner}-${assetType}`;
+                const type = getAssetTypeDef(assetType);
+                const rateInput = document.getElementById(`return-rate-${rowId}`);
+                const returnRate = rateInput && rateInput.value !== '' ? Number(rateInput.value) : null;
+
+                if (type.isForeign) {
+                    const usdInput = document.getElementById(`amount-usd-${rowId}`);
+                    const amountUsd = usdInput && usdInput.value !== '' ? Number(usdInput.value) : 0;
+                    if (amountUsd > 0) {
+                        entries.push({ owner, assetType, amountUsd, returnRate });
+                    }
+                } else {
+                    const krwInput = document.getElementById(`amount-krw-${rowId}`);
+                    const amountKrw = krwInput && krwInput.value !== '' ? Number(krwInput.value) : 0;
+                    if (amountKrw > 0) {
+                        entries.push({ owner, assetType, amountKrw, returnRate });
+                    }
+                }
+            });
+
+            return entries;
+        }
+
+        document.getElementById('asset-form').addEventListener('submit', async function(e) {
+            e.preventDefault();
+
+            const recordedAt = document.getElementById('recorded-at').value;
+            const usdKrw = Number(document.getElementById('usd-krw').value);
+            const note = document.getElementById('note').value;
+            const entries = collectEntries();
+
+            if (entries.length === 0) {
+                alert('자산을 1개 이상 입력해주세요.');
+                return;
+            }
+
+            const payload = { recordedAt, usdKrw, note, entries };
+
+            try {
+                const response = await authFetch(
+                    editingId ? `/api/assets/snapshots/${editingId}` : '/api/assets/snapshots',
+                    {
+                        method: editingId ? 'PUT' : 'POST',
+                        body: JSON.stringify(payload)
+                    }
+                );
+
+                const result = await response.json();
+
+                if (response.ok) {
+                    alert(result.message);
+                    location.href = 'assets.html';
+                } else {
+                    alert(result.message);
+                }
+            } catch (error) {
+                if (error.message !== 'Unauthorized') {
+                    console.error('자산 저장 오류:', error);
+                    alert('자산 정보를 저장하지 못했습니다.');
+                }
+            }
+        });
+    </script>
+</body>
+</html>

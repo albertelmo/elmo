@@ -1,7 +1,11 @@
-﻿const { Pool } = require('pg');
+﻿const { Pool, types } = require('pg');
 const bcrypt = require('bcrypt');
 
 const SALT_ROUNDS = 10;
+
+// DATE 컬럼(OID 1082)을 로컬 타임존 Date로 변환하지 않고 저장된 문자열('YYYY-MM-DD') 그대로 반환한다.
+// (그대로 두면 pg가 Date로 파싱 -> JSON 직렬화 시 UTC로 밀리면서 하루가 틀어지는 문제가 생김)
+types.setTypeParser(1082, value => value);
 
 const pool = process.env.DATABASE_URL
     ? new Pool({
@@ -61,6 +65,38 @@ async function initializeDatabase() {
 
         await client.query(`
             ALTER TABLE posts ADD COLUMN IF NOT EXISTS images JSONB NOT NULL DEFAULT '[]'::jsonb
+        `);
+
+        await client.query(`
+            CREATE TABLE IF NOT EXISTS asset_snapshots (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                recorded_at DATE NOT NULL,
+                usd_krw NUMERIC(10, 2) NOT NULL,
+                note TEXT,
+                created_by UUID REFERENCES users(id) ON DELETE SET NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        `);
+
+        await client.query(`
+            CREATE TABLE IF NOT EXISTS asset_entries (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                snapshot_id UUID NOT NULL REFERENCES asset_snapshots(id) ON DELETE CASCADE,
+                owner VARCHAR(20) NOT NULL,
+                asset_type VARCHAR(20) NOT NULL,
+                amount_krw NUMERIC(16, 2) NOT NULL,
+                amount_usd NUMERIC(16, 2),
+                return_rate NUMERIC(6, 2)
+            )
+        `);
+
+        await client.query(`
+            CREATE INDEX IF NOT EXISTS idx_asset_entries_snapshot_id ON asset_entries(snapshot_id)
+        `);
+
+        await client.query(`
+            CREATE INDEX IF NOT EXISTS idx_asset_snapshots_recorded_at ON asset_snapshots(recorded_at)
         `);
 
         console.log('[DB] 데이터베이스 테이블이 초기화되었습니다.');
@@ -179,6 +215,159 @@ async function incrementViews(id) {
     await pool.query(`UPDATE posts SET views = views + 1 WHERE id = $1`, [id]);
 }
 
+function formatAssetEntry(row) {
+    return {
+        id: row.id,
+        owner: row.owner,
+        asset_type: row.asset_type,
+        amount_krw: Number(row.amount_krw),
+        amount_usd: row.amount_usd !== null ? Number(row.amount_usd) : null,
+        return_rate: row.return_rate !== null ? Number(row.return_rate) : null
+    };
+}
+
+function formatAssetSnapshot(row, entries = []) {
+    if (!row) {
+        return null;
+    }
+    return {
+        id: row.id,
+        recorded_at: row.recorded_at,
+        usd_krw: Number(row.usd_krw),
+        note: row.note || '',
+        created_by: row.created_by,
+        created_at: row.created_at,
+        updated_at: row.updated_at,
+        entries: entries.map(formatAssetEntry)
+    };
+}
+
+async function getAssetSnapshots() {
+    const snapshotsResult = await pool.query(`
+        SELECT id, recorded_at, usd_krw, note, created_by, created_at, updated_at
+        FROM asset_snapshots
+        ORDER BY recorded_at ASC, created_at ASC
+    `);
+
+    if (snapshotsResult.rows.length === 0) {
+        return [];
+    }
+
+    const entriesResult = await pool.query(`
+        SELECT id, snapshot_id, owner, asset_type, amount_krw, amount_usd, return_rate
+        FROM asset_entries
+        WHERE snapshot_id = ANY($1::uuid[])
+    `, [snapshotsResult.rows.map(row => row.id)]);
+
+    const entriesBySnapshot = new Map();
+    entriesResult.rows.forEach(entry => {
+        const list = entriesBySnapshot.get(entry.snapshot_id) || [];
+        list.push(entry);
+        entriesBySnapshot.set(entry.snapshot_id, list);
+    });
+
+    return snapshotsResult.rows.map(row =>
+        formatAssetSnapshot(row, entriesBySnapshot.get(row.id) || [])
+    );
+}
+
+async function getAssetSnapshotById(id) {
+    const snapshotResult = await pool.query(`
+        SELECT id, recorded_at, usd_krw, note, created_by, created_at, updated_at
+        FROM asset_snapshots
+        WHERE id = $1
+    `, [id]);
+
+    if (!snapshotResult.rows[0]) {
+        return null;
+    }
+
+    const entriesResult = await pool.query(`
+        SELECT id, snapshot_id, owner, asset_type, amount_krw, amount_usd, return_rate
+        FROM asset_entries
+        WHERE snapshot_id = $1
+    `, [id]);
+
+    return formatAssetSnapshot(snapshotResult.rows[0], entriesResult.rows);
+}
+
+async function createAssetSnapshot(recordedAt, usdKrw, note, userId, entries) {
+    const client = await pool.connect();
+    try {
+        await client.query('BEGIN');
+
+        const snapshotResult = await client.query(`
+            INSERT INTO asset_snapshots (recorded_at, usd_krw, note, created_by)
+            VALUES ($1, $2, $3, $4)
+            RETURNING id, recorded_at, usd_krw, note, created_by, created_at, updated_at
+        `, [recordedAt, usdKrw, note, userId]);
+
+        const snapshot = snapshotResult.rows[0];
+        const insertedEntries = [];
+
+        for (const entry of entries) {
+            const entryResult = await client.query(`
+                INSERT INTO asset_entries (snapshot_id, owner, asset_type, amount_krw, amount_usd, return_rate)
+                VALUES ($1, $2, $3, $4, $5, $6)
+                RETURNING id, snapshot_id, owner, asset_type, amount_krw, amount_usd, return_rate
+            `, [snapshot.id, entry.owner, entry.assetType, entry.amountKrw, entry.amountUsd, entry.returnRate]);
+            insertedEntries.push(entryResult.rows[0]);
+        }
+
+        await client.query('COMMIT');
+        return formatAssetSnapshot(snapshot, insertedEntries);
+    } catch (error) {
+        await client.query('ROLLBACK');
+        throw error;
+    } finally {
+        client.release();
+    }
+}
+
+async function updateAssetSnapshot(id, recordedAt, usdKrw, note, entries) {
+    const client = await pool.connect();
+    try {
+        await client.query('BEGIN');
+
+        const snapshotResult = await client.query(`
+            UPDATE asset_snapshots
+            SET recorded_at = $1, usd_krw = $2, note = $3, updated_at = CURRENT_TIMESTAMP
+            WHERE id = $4
+            RETURNING id, recorded_at, usd_krw, note, created_by, created_at, updated_at
+        `, [recordedAt, usdKrw, note, id]);
+
+        if (!snapshotResult.rows[0]) {
+            await client.query('ROLLBACK');
+            return null;
+        }
+
+        await client.query(`DELETE FROM asset_entries WHERE snapshot_id = $1`, [id]);
+
+        const insertedEntries = [];
+        for (const entry of entries) {
+            const entryResult = await client.query(`
+                INSERT INTO asset_entries (snapshot_id, owner, asset_type, amount_krw, amount_usd, return_rate)
+                VALUES ($1, $2, $3, $4, $5, $6)
+                RETURNING id, snapshot_id, owner, asset_type, amount_krw, amount_usd, return_rate
+            `, [id, entry.owner, entry.assetType, entry.amountKrw, entry.amountUsd, entry.returnRate]);
+            insertedEntries.push(entryResult.rows[0]);
+        }
+
+        await client.query('COMMIT');
+        return formatAssetSnapshot(snapshotResult.rows[0], insertedEntries);
+    } catch (error) {
+        await client.query('ROLLBACK');
+        throw error;
+    } finally {
+        client.release();
+    }
+}
+
+async function deleteAssetSnapshot(id) {
+    const result = await pool.query(`DELETE FROM asset_snapshots WHERE id = $1`, [id]);
+    return result.rowCount > 0;
+}
+
 module.exports = {
     initializeDatabase,
     getUserByUsername,
@@ -190,5 +379,10 @@ module.exports = {
     createPost,
     updatePost,
     deletePost,
-    incrementViews
+    incrementViews,
+    getAssetSnapshots,
+    getAssetSnapshotById,
+    createAssetSnapshot,
+    updateAssetSnapshot,
+    deleteAssetSnapshot
 };

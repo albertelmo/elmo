@@ -113,13 +113,30 @@ function escapeHtml(text) {
 
 function formatDate(dateString) {
     const date = new Date(dateString);
-    return date.toLocaleDateString('ko-KR', {
+    return date.toLocaleString('ko-KR', {
+        timeZone: 'Asia/Seoul',
         year: 'numeric',
         month: '2-digit',
         day: '2-digit',
         hour: '2-digit',
-        minute: '2-digit'
+        hour12: false
     });
+}
+
+function getKstDateString(date = new Date()) {
+    const parts = new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'Asia/Seoul',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit'
+    }).formatToParts(date);
+
+    const lookup = {};
+    parts.forEach(part => {
+        lookup[part.type] = part.value;
+    });
+
+    return `${lookup.year}-${lookup.month}-${lookup.day}`;
 }
 
 function renderCategoryBadge(category) {

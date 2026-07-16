@@ -4,6 +4,7 @@ const path = require('path');
 const db = require('./database');
 const { verifyAuth, canModifyPost, signToken } = require('./middleware');
 const { CATEGORIES, isValidCategory, isPhotoCategory } = require('./categories');
+const { OWNERS, ASSET_TYPES, isValidOwner, isValidAssetType, getAssetTypeConfig } = require('./asset-categories');
 const {
     UPLOADS_DIR,
     postImagesUpload,
@@ -73,6 +74,47 @@ function normalizePostInput(body, category) {
     }
 
     return { title, content };
+}
+
+function normalizeAssetEntries(rawEntries, usdKrw) {
+    if (!Array.isArray(rawEntries)) {
+        return { error: '자산 항목 형식이 올바르지 않습니다.' };
+    }
+
+    const entries = [];
+
+    for (const raw of rawEntries) {
+        const owner = raw.owner;
+        const assetType = raw.assetType;
+
+        if (!isValidOwner(owner) || !isValidAssetType(assetType)) {
+            return { error: '유효하지 않은 자산 항목입니다.' };
+        }
+
+        const typeConfig = getAssetTypeConfig(assetType);
+        let amountUsd = null;
+        let amountKrw;
+
+        if (typeConfig.isForeign) {
+            amountUsd = Number(raw.amountUsd);
+            if (!amountUsd || amountUsd <= 0) {
+                continue;
+            }
+            amountKrw = Math.round(amountUsd * usdKrw * 100) / 100;
+        } else {
+            amountKrw = Number(raw.amountKrw);
+            if (!amountKrw || amountKrw <= 0) {
+                continue;
+            }
+        }
+
+        const hasReturnRateInput = raw.returnRate !== undefined && raw.returnRate !== null && raw.returnRate !== '';
+        const returnRate = typeConfig.hasReturnRate && hasReturnRateInput ? Number(raw.returnRate) : null;
+
+        entries.push({ owner, assetType, amountKrw, amountUsd, returnRate });
+    }
+
+    return { entries };
 }
 
 app.post('/api/auth/register', async (req, res) => {
@@ -328,6 +370,109 @@ app.delete('/api/posts/:id', verifyAuth, async (req, res) => {
     } catch (error) {
         console.error('[API] 게시글 삭제 오류:', error);
         res.status(500).json({ message: '게시글 삭제에 실패했습니다.' });
+    }
+});
+
+app.get('/api/asset-meta', verifyAuth, (req, res) => {
+    res.json({ owners: OWNERS, assetTypes: ASSET_TYPES });
+});
+
+app.get('/api/assets/snapshots', verifyAuth, async (req, res) => {
+    try {
+        const snapshots = await db.getAssetSnapshots();
+        res.json(snapshots);
+    } catch (error) {
+        console.error('[API] 자산 스냅샷 목록 조회 오류:', error);
+        res.status(500).json({ message: '자산 정보를 불러오지 못했습니다.' });
+    }
+});
+
+app.get('/api/assets/snapshots/:id', verifyAuth, async (req, res) => {
+    try {
+        const snapshot = await db.getAssetSnapshotById(req.params.id);
+        if (!snapshot) {
+            return res.status(404).json({ message: '자산 입력 기록을 찾을 수 없습니다.' });
+        }
+        res.json(snapshot);
+    } catch (error) {
+        console.error('[API] 자산 스냅샷 조회 오류:', error);
+        res.status(500).json({ message: '자산 정보를 불러오지 못했습니다.' });
+    }
+});
+
+app.post('/api/assets/snapshots', verifyAuth, async (req, res) => {
+    try {
+        const recordedAt = (req.body.recordedAt || '').trim();
+        const usdKrw = Number(req.body.usdKrw);
+        const note = (req.body.note || '').trim();
+
+        if (!recordedAt) {
+            return res.status(400).json({ message: '입력일을 선택해주세요.' });
+        }
+        if (!usdKrw || usdKrw <= 0) {
+            return res.status(400).json({ message: '달러환율을 입력해주세요.' });
+        }
+
+        const normalized = normalizeAssetEntries(req.body.entries, usdKrw);
+        if (normalized.error) {
+            return res.status(400).json({ message: normalized.error });
+        }
+        if (normalized.entries.length === 0) {
+            return res.status(400).json({ message: '자산을 1개 이상 입력해주세요.' });
+        }
+
+        const snapshot = await db.createAssetSnapshot(recordedAt, usdKrw, note, req.user.userId, normalized.entries);
+        res.status(201).json({ message: '자산 정보가 저장되었습니다.', snapshot });
+    } catch (error) {
+        console.error('[API] 자산 스냅샷 작성 오류:', error);
+        res.status(500).json({ message: '자산 정보를 저장하지 못했습니다.' });
+    }
+});
+
+app.put('/api/assets/snapshots/:id', verifyAuth, async (req, res) => {
+    try {
+        const id = req.params.id;
+        const recordedAt = (req.body.recordedAt || '').trim();
+        const usdKrw = Number(req.body.usdKrw);
+        const note = (req.body.note || '').trim();
+
+        if (!recordedAt) {
+            return res.status(400).json({ message: '입력일을 선택해주세요.' });
+        }
+        if (!usdKrw || usdKrw <= 0) {
+            return res.status(400).json({ message: '달러환율을 입력해주세요.' });
+        }
+
+        const normalized = normalizeAssetEntries(req.body.entries, usdKrw);
+        if (normalized.error) {
+            return res.status(400).json({ message: normalized.error });
+        }
+        if (normalized.entries.length === 0) {
+            return res.status(400).json({ message: '자산을 1개 이상 입력해주세요.' });
+        }
+
+        const snapshot = await db.updateAssetSnapshot(id, recordedAt, usdKrw, note, normalized.entries);
+        if (!snapshot) {
+            return res.status(404).json({ message: '자산 입력 기록을 찾을 수 없습니다.' });
+        }
+
+        res.json({ message: '자산 정보가 수정되었습니다.', snapshot });
+    } catch (error) {
+        console.error('[API] 자산 스냅샷 수정 오류:', error);
+        res.status(500).json({ message: '자산 정보를 수정하지 못했습니다.' });
+    }
+});
+
+app.delete('/api/assets/snapshots/:id', verifyAuth, async (req, res) => {
+    try {
+        const deleted = await db.deleteAssetSnapshot(req.params.id);
+        if (!deleted) {
+            return res.status(404).json({ message: '자산 입력 기록을 찾을 수 없습니다.' });
+        }
+        res.json({ message: '자산 입력 기록이 삭제되었습니다.' });
+    } catch (error) {
+        console.error('[API] 자산 스냅샷 삭제 오류:', error);
+        res.status(500).json({ message: '자산 입력 기록을 삭제하지 못했습니다.' });
     }
 });
 
