@@ -92,6 +92,10 @@ async function initializeDatabase() {
         `);
 
         await client.query(`
+            ALTER TABLE asset_entries ADD COLUMN IF NOT EXISTS label VARCHAR(50)
+        `);
+
+        await client.query(`
             CREATE INDEX IF NOT EXISTS idx_asset_entries_snapshot_id ON asset_entries(snapshot_id)
         `);
 
@@ -220,6 +224,7 @@ function formatAssetEntry(row) {
         id: row.id,
         owner: row.owner,
         asset_type: row.asset_type,
+        label: row.label || '',
         amount_krw: Number(row.amount_krw),
         amount_usd: row.amount_usd !== null ? Number(row.amount_usd) : null,
         return_rate: row.return_rate !== null ? Number(row.return_rate) : null
@@ -254,7 +259,7 @@ async function getAssetSnapshots() {
     }
 
     const entriesResult = await pool.query(`
-        SELECT id, snapshot_id, owner, asset_type, amount_krw, amount_usd, return_rate
+        SELECT id, snapshot_id, owner, asset_type, label, amount_krw, amount_usd, return_rate
         FROM asset_entries
         WHERE snapshot_id = ANY($1::uuid[])
     `, [snapshotsResult.rows.map(row => row.id)]);
@@ -283,7 +288,7 @@ async function getAssetSnapshotById(id) {
     }
 
     const entriesResult = await pool.query(`
-        SELECT id, snapshot_id, owner, asset_type, amount_krw, amount_usd, return_rate
+        SELECT id, snapshot_id, owner, asset_type, label, amount_krw, amount_usd, return_rate
         FROM asset_entries
         WHERE snapshot_id = $1
     `, [id]);
@@ -307,10 +312,10 @@ async function createAssetSnapshot(recordedAt, usdKrw, note, userId, entries) {
 
         for (const entry of entries) {
             const entryResult = await client.query(`
-                INSERT INTO asset_entries (snapshot_id, owner, asset_type, amount_krw, amount_usd, return_rate)
-                VALUES ($1, $2, $3, $4, $5, $6)
-                RETURNING id, snapshot_id, owner, asset_type, amount_krw, amount_usd, return_rate
-            `, [snapshot.id, entry.owner, entry.assetType, entry.amountKrw, entry.amountUsd, entry.returnRate]);
+                INSERT INTO asset_entries (snapshot_id, owner, asset_type, label, amount_krw, amount_usd, return_rate)
+                VALUES ($1, $2, $3, $4, $5, $6, $7)
+                RETURNING id, snapshot_id, owner, asset_type, label, amount_krw, amount_usd, return_rate
+            `, [snapshot.id, entry.owner, entry.assetType, entry.label || null, entry.amountKrw, entry.amountUsd, entry.returnRate]);
             insertedEntries.push(entryResult.rows[0]);
         }
 
@@ -346,10 +351,10 @@ async function updateAssetSnapshot(id, recordedAt, usdKrw, note, entries) {
         const insertedEntries = [];
         for (const entry of entries) {
             const entryResult = await client.query(`
-                INSERT INTO asset_entries (snapshot_id, owner, asset_type, amount_krw, amount_usd, return_rate)
-                VALUES ($1, $2, $3, $4, $5, $6)
-                RETURNING id, snapshot_id, owner, asset_type, amount_krw, amount_usd, return_rate
-            `, [id, entry.owner, entry.assetType, entry.amountKrw, entry.amountUsd, entry.returnRate]);
+                INSERT INTO asset_entries (snapshot_id, owner, asset_type, label, amount_krw, amount_usd, return_rate)
+                VALUES ($1, $2, $3, $4, $5, $6, $7)
+                RETURNING id, snapshot_id, owner, asset_type, label, amount_krw, amount_usd, return_rate
+            `, [id, entry.owner, entry.assetType, entry.label || null, entry.amountKrw, entry.amountUsd, entry.returnRate]);
             insertedEntries.push(entryResult.rows[0]);
         }
 

@@ -110,8 +110,9 @@ function normalizeAssetEntries(rawEntries, usdKrw) {
 
         const hasReturnRateInput = raw.returnRate !== undefined && raw.returnRate !== null && raw.returnRate !== '';
         const returnRate = typeConfig.hasReturnRate && hasReturnRateInput ? Number(raw.returnRate) : null;
+        const label = typeof raw.label === 'string' ? raw.label.trim().slice(0, 50) : '';
 
-        entries.push({ owner, assetType, amountKrw, amountUsd, returnRate });
+        entries.push({ owner, assetType, label, amountKrw, amountUsd, returnRate });
     }
 
     return { entries };

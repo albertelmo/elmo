@@ -45,6 +45,50 @@ function formatManwon(amount) {
     return `${value.toLocaleString('ko-KR')}만원`;
 }
 
+function sanitizeNumberInput(value) {
+    let cleaned = String(value || '').replace(/[^\d.]/g, '');
+    const firstDot = cleaned.indexOf('.');
+    if (firstDot !== -1) {
+        cleaned = cleaned.slice(0, firstDot + 1) + cleaned.slice(firstDot + 1).replace(/\./g, '');
+    }
+    return cleaned;
+}
+
+function formatNumberWithCommas(rawValue) {
+    const cleaned = sanitizeNumberInput(rawValue);
+    if (!cleaned) {
+        return '';
+    }
+    const [intPart, decPart] = cleaned.split('.');
+    const formattedInt = (intPart || '').replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+    return decPart !== undefined ? `${formattedInt}.${decPart}` : formattedInt;
+}
+
+function getNumericInputValue(input) {
+    if (!input) {
+        return 0;
+    }
+    const cleaned = sanitizeNumberInput(input.value);
+    return cleaned === '' || cleaned === '.' ? 0 : Number(cleaned);
+}
+
+function setNumberInputValue(input, value) {
+    if (!input) {
+        return;
+    }
+    input.value = formatNumberWithCommas(value);
+}
+
+function attachThousandsFormatting(input) {
+    input.addEventListener('input', () => {
+        const cursorFromEnd = input.value.length - input.selectionStart;
+        const formatted = formatNumberWithCommas(input.value);
+        input.value = formatted;
+        const nextPos = Math.max(0, formatted.length - cursorFromEnd);
+        input.setSelectionRange(nextPos, nextPos);
+    });
+}
+
 function formatPercent(rate) {
     if (rate === null || rate === undefined || Number.isNaN(Number(rate))) {
         return '-';

@@ -30,7 +30,7 @@
 
                 <div class="form-group">
                     <label for="usd-krw">달러환율 (원/USD)</label>
-                    <input type="number" id="usd-krw" step="0.01" min="0" placeholder="예: 1380.50" required>
+                    <input type="text" id="usd-krw" inputmode="decimal" placeholder="예: 1,380.50" required>
                 </div>
 
                 <div class="form-group">
@@ -74,58 +74,136 @@
             container.innerHTML = ASSET_OWNERS.map(owner => `
                 <div class="asset-owner-section">
                     <h3 class="asset-owner-title">${owner.label}</h3>
-                    ${ASSET_TYPE_DEFS.map(type => renderAssetEntryRow(owner.key, type)).join('')}
+                    ${ASSET_TYPE_DEFS.map(type => renderTypeBlock(owner.key, type)).join('')}
                 </div>
             `).join('');
 
-            container.querySelectorAll('.amount-usd-input').forEach(input => {
-                input.addEventListener('input', updateForeignPreview);
+            document.querySelectorAll('.asset-type-block').forEach(block => {
+                addEntryRow(block, {});
             });
-            document.getElementById('usd-krw').addEventListener('input', updateAllForeignPreviews);
+
+            container.addEventListener('input', handleContainerInput);
+            container.addEventListener('click', handleContainerClick);
+
+            const usdKrwInput = document.getElementById('usd-krw');
+            attachThousandsFormatting(usdKrwInput);
+            usdKrwInput.addEventListener('input', updateForeignPreviews);
         }
 
-        function renderAssetEntryRow(ownerKey, type) {
-            const rowId = `${ownerKey}-${type.key}`;
+        function renderTypeBlock(ownerKey, type) {
+            return `
+                <div class="asset-type-block" data-owner="${ownerKey}" data-type="${type.key}">
+                    <div class="asset-type-header">
+                        <span class="asset-type-title">${type.label}</span>
+                        <button type="button" class="entry-add-btn">+ 항목 추가</button>
+                    </div>
+                    <div class="asset-type-rows"></div>
+                </div>
+            `;
+        }
 
+        function renderEntryRowHtml(ownerKey, type) {
             if (type.isForeign) {
                 return `
                     <div class="asset-entry-row" data-owner="${ownerKey}" data-type="${type.key}">
-                        <div class="asset-entry-label">${type.label}</div>
-                        <div class="asset-entry-fields">
-                            <input type="number" id="amount-usd-${rowId}" class="amount-usd-input" min="0" step="0.01" placeholder="달러 금액 ($)">
-                            <div class="computed-krw" id="computed-krw-${rowId}">≈ 0원</div>
-                            <input type="number" id="return-rate-${rowId}" class="return-rate-input" step="0.01" placeholder="수익률 (%)">
-                        </div>
+                        <input type="text" class="entry-label-input" placeholder="세부항목 (선택, 예: 연금)">
+                        <input type="text" class="amount-usd-input" inputmode="decimal" placeholder="달러 금액 ($)">
+                        <div class="computed-krw">≈ 0원</div>
+                        <input type="number" class="return-rate-input" step="0.01" placeholder="수익률 (%)">
+                        <button type="button" class="entry-remove-btn" title="삭제">✕</button>
                     </div>
                 `;
             }
 
             return `
                 <div class="asset-entry-row" data-owner="${ownerKey}" data-type="${type.key}">
-                    <div class="asset-entry-label">${type.label}</div>
-                    <div class="asset-entry-fields">
-                        <input type="number" id="amount-krw-${rowId}" class="amount-krw-input" min="0" step="1" placeholder="금액 (원)">
-                        ${type.hasReturnRate ? `<input type="number" id="return-rate-${rowId}" class="return-rate-input" step="0.01" placeholder="수익률 (%)">` : '<div class="asset-entry-spacer"></div>'}
-                    </div>
+                    <input type="text" class="entry-label-input" placeholder="세부항목 (선택, 예: 연금)">
+                    <input type="text" class="amount-krw-input" inputmode="decimal" placeholder="금액 (원)">
+                    ${type.hasReturnRate ? `<input type="number" class="return-rate-input" step="0.01" placeholder="수익률 (%)">` : '<div class="asset-entry-spacer"></div>'}
+                    <button type="button" class="entry-remove-btn" title="삭제">✕</button>
                 </div>
             `;
         }
 
-        function updateAllForeignPreviews() {
-            document.querySelectorAll('.amount-usd-input').forEach(input => updateForeignPreviewFor(input));
+        function addEntryRow(block, entry) {
+            const ownerKey = block.dataset.owner;
+            const type = getAssetTypeDef(block.dataset.type);
+            const rowsContainer = block.querySelector('.asset-type-rows');
+            rowsContainer.insertAdjacentHTML('beforeend', renderEntryRowHtml(ownerKey, type));
+            fillRow(rowsContainer.lastElementChild, type, entry);
         }
 
-        function updateForeignPreview(event) {
-            updateForeignPreviewFor(event.target);
+        function fillRow(row, type, entry) {
+            const labelInput = row.querySelector('.entry-label-input');
+            if (labelInput) {
+                labelInput.value = entry.label || '';
+            }
+
+            if (type.isForeign) {
+                const usdInput = row.querySelector('.amount-usd-input');
+                if (usdInput && entry.amount_usd !== undefined) {
+                    setNumberInputValue(usdInput, entry.amount_usd);
+                }
+                updateForeignPreviewForRow(row);
+            } else {
+                const krwInput = row.querySelector('.amount-krw-input');
+                if (krwInput && entry.amount_krw !== undefined) {
+                    setNumberInputValue(krwInput, entry.amount_krw);
+                }
+            }
+
+            const rateInput = row.querySelector('.return-rate-input');
+            if (rateInput && entry.return_rate !== undefined && entry.return_rate !== null) {
+                rateInput.value = entry.return_rate;
+            }
         }
 
-        function updateForeignPreviewFor(input) {
-            const row = input.closest('.asset-entry-row');
-            const rowId = `${row.dataset.owner}-${row.dataset.type}`;
-            const usdKrw = Number(document.getElementById('usd-krw').value) || 0;
-            const usdAmount = Number(input.value) || 0;
+        function handleContainerInput(event) {
+            const target = event.target;
+
+            if (target.classList.contains('amount-usd-input') || target.classList.contains('amount-krw-input')) {
+                const cursorFromEnd = target.value.length - target.selectionStart;
+                const formatted = formatNumberWithCommas(target.value);
+                target.value = formatted;
+                const nextPos = Math.max(0, formatted.length - cursorFromEnd);
+                target.setSelectionRange(nextPos, nextPos);
+            }
+
+            if (target.classList.contains('amount-usd-input')) {
+                updateForeignPreviewForRow(target.closest('.asset-entry-row'));
+            }
+        }
+
+        function handleContainerClick(event) {
+            const addBtn = event.target.closest('.entry-add-btn');
+            if (addBtn) {
+                addEntryRow(addBtn.closest('.asset-type-block'), {});
+                return;
+            }
+
+            const removeBtn = event.target.closest('.entry-remove-btn');
+            if (removeBtn) {
+                removeBtn.closest('.asset-entry-row').remove();
+            }
+        }
+
+        function updateForeignPreviews() {
+            document.querySelectorAll('.asset-entry-row[data-type="foreign"]').forEach(updateForeignPreviewForRow);
+        }
+
+        function updateForeignPreviewForRow(row) {
+            if (!row) {
+                return;
+            }
+            const usdInput = row.querySelector('.amount-usd-input');
+            const computedEl = row.querySelector('.computed-krw');
+            if (!usdInput || !computedEl) {
+                return;
+            }
+            const usdKrw = getNumericInputValue(document.getElementById('usd-krw'));
+            const usdAmount = getNumericInputValue(usdInput);
             const krwAmount = Math.round(usdAmount * usdKrw);
-            document.getElementById(`computed-krw-${rowId}`).textContent = `≈ ${formatKrw(krwAmount)}`;
+            computedEl.textContent = `≈ ${formatKrw(krwAmount)}`;
         }
 
         async function loadSnapshot(id) {
@@ -150,29 +228,27 @@
 
         function fillForm(snapshot) {
             document.getElementById('recorded-at').value = String(snapshot.recorded_at).substring(0, 10);
-            document.getElementById('usd-krw').value = snapshot.usd_krw;
+            setNumberInputValue(document.getElementById('usd-krw'), snapshot.usd_krw);
             document.getElementById('note').value = snapshot.note || '';
 
-            snapshot.entries.forEach(entry => {
-                const rowId = `${entry.owner}-${entry.asset_type}`;
-                const type = getAssetTypeDef(entry.asset_type);
-
-                if (type && type.isForeign) {
-                    const usdInput = document.getElementById(`amount-usd-${rowId}`);
-                    if (usdInput) {
-                        usdInput.value = entry.amount_usd;
-                        updateForeignPreviewFor(usdInput);
-                    }
-                } else {
-                    const krwInput = document.getElementById(`amount-krw-${rowId}`);
-                    if (krwInput) {
-                        krwInput.value = entry.amount_krw;
-                    }
+            const grouped = new Map();
+            (snapshot.entries || []).forEach(entry => {
+                const key = `${entry.owner}|${entry.asset_type}`;
+                if (!grouped.has(key)) {
+                    grouped.set(key, []);
                 }
+                grouped.get(key).push(entry);
+            });
 
-                const rateInput = document.getElementById(`return-rate-${rowId}`);
-                if (rateInput && entry.return_rate !== null) {
-                    rateInput.value = entry.return_rate;
+            document.querySelectorAll('.asset-type-block').forEach(block => {
+                block.querySelector('.asset-type-rows').innerHTML = '';
+                const key = `${block.dataset.owner}|${block.dataset.type}`;
+                const entries = grouped.get(key) || [];
+
+                if (entries.length === 0) {
+                    addEntryRow(block, {});
+                } else {
+                    entries.forEach(entry => addEntryRow(block, entry));
                 }
             });
         }
@@ -183,22 +259,23 @@
             document.querySelectorAll('.asset-entry-row').forEach(row => {
                 const owner = row.dataset.owner;
                 const assetType = row.dataset.type;
-                const rowId = `${owner}-${assetType}`;
                 const type = getAssetTypeDef(assetType);
-                const rateInput = document.getElementById(`return-rate-${rowId}`);
+                const labelInput = row.querySelector('.entry-label-input');
+                const label = labelInput ? labelInput.value.trim() : '';
+                const rateInput = row.querySelector('.return-rate-input');
                 const returnRate = rateInput && rateInput.value !== '' ? Number(rateInput.value) : null;
 
                 if (type.isForeign) {
-                    const usdInput = document.getElementById(`amount-usd-${rowId}`);
-                    const amountUsd = usdInput && usdInput.value !== '' ? Number(usdInput.value) : 0;
+                    const usdInput = row.querySelector('.amount-usd-input');
+                    const amountUsd = getNumericInputValue(usdInput);
                     if (amountUsd > 0) {
-                        entries.push({ owner, assetType, amountUsd, returnRate });
+                        entries.push({ owner, assetType, label, amountUsd, returnRate });
                     }
                 } else {
-                    const krwInput = document.getElementById(`amount-krw-${rowId}`);
-                    const amountKrw = krwInput && krwInput.value !== '' ? Number(krwInput.value) : 0;
+                    const krwInput = row.querySelector('.amount-krw-input');
+                    const amountKrw = getNumericInputValue(krwInput);
                     if (amountKrw > 0) {
-                        entries.push({ owner, assetType, amountKrw, returnRate });
+                        entries.push({ owner, assetType, label, amountKrw, returnRate });
                     }
                 }
             });
@@ -210,7 +287,7 @@
             e.preventDefault();
 
             const recordedAt = document.getElementById('recorded-at').value;
-            const usdKrw = Number(document.getElementById('usd-krw').value);
+            const usdKrw = getNumericInputValue(document.getElementById('usd-krw'));
             const note = document.getElementById('note').value;
             const entries = collectEntries();
 
