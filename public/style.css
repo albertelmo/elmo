@@ -187,6 +187,14 @@ main {
     margin-top: 16px;
 }
 
+.asset-header-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
 .category-tabs {
     display: flex;
     gap: 10px;
@@ -696,6 +704,21 @@ main {
     color: #90caf9;
 }
 
+.summary-delta {
+    margin-top: 3px;
+    font-size: 11px;
+    font-weight: 700;
+    opacity: 0.95;
+}
+
+.summary-delta.positive {
+    color: #ff8a80;
+}
+
+.summary-delta.negative {
+    color: #90caf9;
+}
+
 .pie-legend {
     display: flex;
     flex-wrap: wrap;
@@ -1163,6 +1186,10 @@ main {
     }
 
     .summary-investment {
+        font-size: 10px;
+    }
+
+    .summary-delta {
         font-size: 10px;
     }
 

@@ -31,8 +31,14 @@
 
         <main>
             <div class="board-header">
-                <div class="board-info" style="margin-top: 0;">
-                    입력 기록 <span id="snapshot-count">0</span>건
+                <div class="asset-header-row">
+                    <div class="board-info" style="margin-top: 0;">
+                        입력 기록 <span id="snapshot-count">0</span>건
+                    </div>
+                    <div class="chart-controls">
+                        <label for="snapshot-select">기준 시점</label>
+                        <select id="snapshot-select"></select>
+                    </div>
                 </div>
             </div>
 
@@ -48,10 +54,6 @@
 
                 <div class="chart-section-header">
                     <h3>자산 구성 비율</h3>
-                    <div class="chart-controls">
-                        <label for="snapshot-select">기준 시점</label>
-                        <select id="snapshot-select"></select>
-                    </div>
                 </div>
                 <div class="chart-grid" id="composition-grid"></div>
 
@@ -167,6 +169,7 @@
             select.value = currentSnapshotId;
             select.onchange = () => {
                 currentSnapshotId = select.value;
+                renderSummaryCards();
                 renderComposition();
             };
         }
@@ -179,15 +182,38 @@
         }
 
         function renderSummaryCards() {
-            const latest = allSnapshots[allSnapshots.length - 1];
+            const selectedIndex = allSnapshots.findIndex(item => item.id === currentSnapshotId);
+            const effectiveIndex = selectedIndex !== -1 ? selectedIndex : allSnapshots.length - 1;
+            const selected = allSnapshots[effectiveIndex];
+            const previous = effectiveIndex > 0 ? allSnapshots[effectiveIndex - 1] : null;
+
             const container = document.getElementById('summary-cards');
-            const jaesikTotal = computeOwnerTotal(latest.entries, 'jaesik');
-            const jieunTotal = computeOwnerTotal(latest.entries, 'jieun');
+            const jaesikTotal = computeOwnerTotal(selected.entries, 'jaesik');
+            const jieunTotal = computeOwnerTotal(selected.entries, 'jieun');
             const totalAmount = jaesikTotal + jieunTotal;
 
-            const totalInvestment = computeInvestmentSummary(latest.entries, null);
-            const jaesikInvestment = computeInvestmentSummary(latest.entries, 'jaesik');
-            const jieunInvestment = computeInvestmentSummary(latest.entries, 'jieun');
+            const totalInvestment = computeInvestmentSummary(selected.entries, null);
+            const jaesikInvestment = computeInvestmentSummary(selected.entries, 'jaesik');
+            const jieunInvestment = computeInvestmentSummary(selected.entries, 'jieun');
+
+            const jaesikPrevTotal = previous ? computeOwnerTotal(previous.entries, 'jaesik') : null;
+            const jieunPrevTotal = previous ? computeOwnerTotal(previous.entries, 'jieun') : null;
+            const prevTotalAmount = previous ? jaesikPrevTotal + jieunPrevTotal : null;
+
+            const renderDeltaLine = (current, prev) => {
+                if (prev === null) {
+                    return '';
+                }
+                const diff = current - prev;
+                const percent = prev ? (diff / prev) * 100 : 0;
+                const rateClass = diff > 0 ? 'positive' : diff < 0 ? 'negative' : '';
+                const arrow = diff > 0 ? '▲' : diff < 0 ? '▼' : '-';
+                return `
+                    <div class="summary-delta ${rateClass}">
+                        ${arrow} ${formatKrw(Math.abs(diff))} (${formatPercent(percent)})
+                    </div>
+                `;
+            };
 
             const renderInvestmentLine = summary => `
                 <div class="summary-investment">
@@ -202,20 +228,23 @@
                         <div class="summary-item">
                             <div class="summary-label">전체 총자산</div>
                             <div class="summary-value">${formatKrw(totalAmount)}</div>
+                            ${renderDeltaLine(totalAmount, prevTotalAmount)}
                             ${renderInvestmentLine(totalInvestment)}
                         </div>
                         <div class="summary-item">
                             <div class="summary-label">${getOwnerLabel('jaesik')}</div>
                             <div class="summary-value">${formatKrw(jaesikTotal)}</div>
+                            ${renderDeltaLine(jaesikTotal, jaesikPrevTotal)}
                             ${renderInvestmentLine(jaesikInvestment)}
                         </div>
                         <div class="summary-item">
                             <div class="summary-label">${getOwnerLabel('jieun')}</div>
                             <div class="summary-value">${formatKrw(jieunTotal)}</div>
+                            ${renderDeltaLine(jieunTotal, jieunPrevTotal)}
                             ${renderInvestmentLine(jieunInvestment)}
                         </div>
                     </div>
-                    <div class="summary-sub">${latest.recorded_at} 기준 · 환율 ${Number(latest.usd_krw).toLocaleString('ko-KR')}원</div>
+                    <div class="summary-sub">${selected.recorded_at} 기준 · 환율 ${Number(selected.usd_krw).toLocaleString('ko-KR')}원 ${previous ? `· 직전 기록(${previous.recorded_at}) 대비` : ''}</div>
                 </div>
             `;
         }

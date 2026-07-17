@@ -23,6 +23,7 @@
             <h1 id="page-title">자산 입력</h1>
             <div class="header-actions">
                 <div id="user-header"></div>
+                <button type="button" id="load-previous-btn" class="btn btn-secondary" style="display: none;">이전 기록 불러오기</button>
                 <button onclick="location.href='assets.html'" class="btn btn-secondary">목록으로</button>
             </div>
         </header>
@@ -72,6 +73,9 @@
             loadSnapshot(editingId);
         } else {
             document.getElementById('recorded-at').value = getKstDateString();
+            const loadPreviousBtn = document.getElementById('load-previous-btn');
+            loadPreviousBtn.style.display = '';
+            loadPreviousBtn.addEventListener('click', loadPreviousSnapshot);
         }
 
         function renderOwnerSections() {
@@ -236,7 +240,10 @@
             document.getElementById('recorded-at').value = String(snapshot.recorded_at).substring(0, 10);
             setNumberInputValue(document.getElementById('usd-krw'), snapshot.usd_krw);
             document.getElementById('note').value = snapshot.note || '';
+            fillEntryRowsFromSnapshot(snapshot);
+        }
 
+        function fillEntryRowsFromSnapshot(snapshot) {
             const grouped = new Map();
             (snapshot.entries || []).forEach(entry => {
                 const key = `${entry.owner}|${entry.asset_type}`;
@@ -257,6 +264,37 @@
                     entries.forEach(entry => addEntryRow(block, entry));
                 }
             });
+        }
+
+        async function loadPreviousSnapshot() {
+            try {
+                const response = await authFetch('/api/assets/snapshots');
+                const data = await response.json();
+
+                if (!response.ok) {
+                    alert(data.message || '이전 기록을 불러오지 못했습니다.');
+                    return;
+                }
+
+                if (!data.length) {
+                    alert('불러올 이전 기록이 없습니다.');
+                    return;
+                }
+
+                const latest = data[data.length - 1];
+
+                if (!confirm(`${latest.recorded_at} 기록의 자산 항목을 불러와 현재 입력값을 덮어씁니다. 계속할까요?`)) {
+                    return;
+                }
+
+                setNumberInputValue(document.getElementById('usd-krw'), latest.usd_krw);
+                fillEntryRowsFromSnapshot(latest);
+            } catch (error) {
+                if (error.message !== 'Unauthorized') {
+                    console.error('이전 기록 로드 오류:', error);
+                    alert('이전 기록을 불러오지 못했습니다.');
+                }
+            }
         }
 
         function collectEntries() {
