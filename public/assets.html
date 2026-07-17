@@ -3,6 +3,12 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" href="logo/logo.jpg">
+    <link rel="apple-touch-icon" href="logo/logo.jpg">
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#667eea">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-title" content="게시판">
     <title>자산관리 - 게시판</title>
     <link rel="stylesheet" href="style.css">
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
@@ -219,9 +225,9 @@
             const grid = document.getElementById('composition-grid');
 
             const cards = [
+                { id: 'chart-total', title: '전체 자산구성', owner: null },
                 { id: 'chart-jaesik', title: `${getOwnerLabel('jaesik')} 자산구성`, owner: 'jaesik' },
-                { id: 'chart-jieun', title: `${getOwnerLabel('jieun')} 자산구성`, owner: 'jieun' },
-                { id: 'chart-total', title: '전체 자산구성', owner: null }
+                { id: 'chart-jieun', title: `${getOwnerLabel('jieun')} 자산구성`, owner: 'jieun' }
             ];
 
             grid.innerHTML = cards.map(card => `

@@ -22,9 +22,9 @@ body {
 header {
     background: rgba(255, 255, 255, 0.95);
     backdrop-filter: blur(10px);
-    border-radius: 15px;
-    padding: 20px 30px;
-    margin-bottom: 30px;
+    border-radius: 12px;
+    padding: 12px 22px;
+    margin-bottom: 16px;
     box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
     display: flex;
     justify-content: space-between;
@@ -111,7 +111,7 @@ header {
 
 header h1 {
     color: #4a5568;
-    font-size: 2rem;
+    font-size: 1.4rem;
     font-weight: 700;
     background: linear-gradient(135deg, #667eea, #764ba2);
     -webkit-background-clip: text;
@@ -594,19 +594,19 @@ main {
 /* ������ */
 .app-tabs {
     display: flex;
-    gap: 10px;
-    margin-bottom: 20px;
+    gap: 8px;
+    margin-bottom: 12px;
 }
 
 .app-tab {
     flex: 1;
     text-align: center;
-    padding: 14px 20px;
-    border-radius: 12px;
+    padding: 8px 16px;
+    border-radius: 10px;
     background: rgba(255, 255, 255, 0.85);
     color: #4a5568;
     font-weight: 700;
-    font-size: 15px;
+    font-size: 13px;
     text-decoration: none;
     box-shadow: 0 4px 15px rgba(0, 0, 0, 0.08);
     transition: all 0.2s ease;
@@ -929,14 +929,14 @@ main {
     header {
         flex-direction: column;
         align-items: stretch;
-        gap: 12px;
-        padding: 16px;
-        margin-bottom: 16px;
+        gap: 8px;
+        padding: 12px 14px;
+        margin-bottom: 10px;
         text-align: left;
     }
 
     header h1 {
-        font-size: 1.35rem;
+        font-size: 1.15rem;
     }
 
     .header-actions {
@@ -1095,12 +1095,14 @@ main {
     }
 
     .app-tabs {
-        margin-bottom: 14px;
+        margin-bottom: 10px;
+        gap: 6px;
     }
 
     .app-tab {
-        padding: 10px 12px;
-        font-size: 13px;
+        padding: 7px 10px;
+        font-size: 12px;
+        border-radius: 8px;
     }
 
     .summary-card-combined {
