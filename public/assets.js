@@ -19,7 +19,7 @@ const ASSET_TYPE_COLORS = {
 
 const OWNER_COLORS = {
     jaesik: '#667eea',
-    jieun: '#ed64a6'
+    jieun: '#2dd4bf'
 };
 
 if (typeof Chart !== 'undefined' && typeof ChartDataLabels !== 'undefined') {
