@@ -262,7 +262,9 @@ function renderPieChart(canvasId, compositionItems, existingChart) {
                                 const amount = Math.round(value / 10000).toLocaleString('ko-KR');
                                 let text = `${label} ${amount} (${percent}%)`;
 
-                                const investment = compositionItems[index] && compositionItems[index].investment;
+                                const item = compositionItems[index];
+                                const typeDef = item && getAssetTypeDef(item.type);
+                                const investment = typeDef && typeDef.hasReturnRate ? item.investment : null;
                                 if (investment) {
                                     const principalManwon = Math.round(investment.principal / 10000).toLocaleString('ko-KR');
                                     text += ` · 원금 ${principalManwon} ${formatPercent(investment.returnRate)}`;
