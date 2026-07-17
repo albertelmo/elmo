@@ -195,6 +195,13 @@ main {
     flex-wrap: wrap;
 }
 
+.live-rate {
+    margin-left: 6px;
+    color: #667eea;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
 .category-tabs {
     display: flex;
     gap: 10px;
@@ -979,6 +986,69 @@ main {
     color: #e53e3e;
 }
 
+.cat-panel {
+    background: white;
+    border-radius: 12px;
+    padding: 18px 20px;
+    margin-bottom: 16px;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.06);
+}
+
+.cat-panel h3 {
+    margin-bottom: 14px;
+    color: #4a5568;
+    font-size: 1rem;
+}
+
+.cat-form-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 12px;
+}
+
+.cat-form-grid-manual {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.cat-form-grid-manual .cat-note-field {
+    grid-column: span 1;
+}
+
+.cat-form-actions {
+    margin-top: 12px;
+}
+
+.cat-import-help {
+    color: #718096;
+    font-size: 13px;
+    margin-bottom: 12px;
+    line-height: 1.5;
+}
+
+.cat-import-form {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.cat-import-form input[type="file"] {
+    flex: 1;
+    min-width: 180px;
+    font-size: 13px;
+}
+
+.cat-weight-table td:nth-child(2),
+.cat-weight-table td:nth-child(3) {
+    white-space: nowrap;
+}
+
+.auth-result.success {
+    background: #f0fff4;
+    color: #276749;
+    border: 1px solid #c6f6d5;
+}
+
 @media (max-width: 768px) {
     .container {
         padding: 12px;
@@ -1043,6 +1113,14 @@ main {
     .board-info {
         margin-top: 12px;
         font-size: 13px;
+    }
+
+    .live-rate {
+        display: block;
+        margin-left: 0;
+        margin-top: 4px;
+        white-space: normal;
+        font-size: 12px;
     }
 
     .category-tabs {
@@ -1221,6 +1299,24 @@ main {
         padding: 10px;
         background: #f7fafc;
         border-radius: 8px;
+    }
+
+    .cat-form-grid,
+    .cat-form-grid-manual {
+        grid-template-columns: 1fr;
+    }
+
+    .cat-note-field {
+        grid-column: span 1;
+    }
+
+    .cat-import-form {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .cat-import-form input[type="file"] {
+        width: 100%;
     }
 
     .entry-label-input,

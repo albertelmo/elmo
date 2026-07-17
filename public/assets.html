@@ -8,8 +8,8 @@
     <link rel="manifest" href="manifest.json">
     <meta name="theme-color" content="#667eea">
     <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-title" content="게시판">
-    <title>자산관리 - 게시판</title>
+    <meta name="apple-mobile-web-app-title" content="기록">
+    <title>자산관리 - 기록</title>
     <link rel="stylesheet" href="style.css">
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0/dist/chartjs-plugin-datalabels.min.js"></script>
@@ -17,8 +17,9 @@
 <body>
     <div class="container">
         <nav class="app-tabs">
-            <a href="index.html" class="app-tab">게시판</a>
+            <a href="index.html" class="app-tab">기록</a>
             <a href="assets.html" class="app-tab active">자산관리</a>
+            <a href="cats.html" class="app-tab">고양이</a>
         </nav>
 
         <header>
@@ -33,7 +34,8 @@
             <div class="board-header">
                 <div class="asset-header-row">
                     <div class="board-info" style="margin-top: 0;">
-                        입력 기록 <span id="snapshot-count">0</span>건
+                        자산 기록 <span id="snapshot-count">0</span>건
+                        <span class="live-rate" id="live-usd-krw"></span>
                     </div>
                     <div class="chart-controls">
                         <label for="snapshot-select">기준 시점</label>
@@ -104,7 +106,31 @@
         let trendChart = null;
 
         renderTrendModeTabs();
+        loadLiveExchangeRate();
         loadSnapshots();
+
+        async function loadLiveExchangeRate() {
+            const el = document.getElementById('live-usd-krw');
+            if (!el) {
+                return;
+            }
+
+            try {
+                const response = await authFetch('/api/exchange-rate/usd-krw');
+                const data = await response.json();
+
+                if (response.ok) {
+                    const [, month, day] = String(data.date).split('-');
+                    const basisDate = `${Number(month)}/${Number(day)}`;
+                    const rate = Math.round(Number(data.rate)).toLocaleString('ko-KR');
+                    el.textContent = `· 환율 ${rate}원 (기준 ${basisDate})`;
+                }
+            } catch (error) {
+                if (error.message !== 'Unauthorized') {
+                    console.error('환율 조회 오류:', error);
+                }
+            }
+        }
 
         function renderTrendModeTabs() {
             const container = document.getElementById('trend-mode-tabs');
@@ -226,7 +252,7 @@
                 <div class="summary-card-combined">
                     <div class="summary-row">
                         <div class="summary-item">
-                            <div class="summary-label">전체 총자산</div>
+                            <div class="summary-label">총자산</div>
                             <div class="summary-value">${formatKrw(totalAmount)}</div>
                             ${renderDeltaLine(totalAmount, prevTotalAmount)}
                             ${renderInvestmentLine(totalInvestment)}

@@ -103,6 +103,35 @@ async function initializeDatabase() {
             CREATE INDEX IF NOT EXISTS idx_asset_snapshots_recorded_at ON asset_snapshots(recorded_at)
         `);
 
+        await client.query(`
+            CREATE TABLE IF NOT EXISTS cat_weight_records (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                recorded_at DATE NOT NULL UNIQUE,
+                mini_kg NUMERIC(5, 2),
+                rabi_kg NUMERIC(5, 2),
+                note TEXT,
+                created_by UUID REFERENCES users(id) ON DELETE SET NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        `);
+
+        await client.query(`
+            CREATE INDEX IF NOT EXISTS idx_cat_weight_records_recorded_at ON cat_weight_records(recorded_at)
+        `);
+
+        await client.query(`
+            DO $$
+            BEGIN
+                IF EXISTS (
+                    SELECT 1 FROM information_schema.columns
+                    WHERE table_name = 'cat_weight_records' AND column_name = 'ravi_kg'
+                ) THEN
+                    ALTER TABLE cat_weight_records RENAME COLUMN ravi_kg TO rabi_kg;
+                END IF;
+            END $$;
+        `);
+
         console.log('[DB] 데이터베이스 테이블이 초기화되었습니다.');
         client.release();
     } catch (error) {
@@ -373,6 +402,90 @@ async function deleteAssetSnapshot(id) {
     return result.rowCount > 0;
 }
 
+function formatCatWeightRecord(row) {
+    if (!row) {
+        return null;
+    }
+    return {
+        id: row.id,
+        recorded_at: row.recorded_at,
+        mini_kg: row.mini_kg === null ? null : Number(row.mini_kg),
+        rabi_kg: row.rabi_kg === null ? null : Number(row.rabi_kg),
+        note: row.note || '',
+        created_by: row.created_by,
+        created_at: row.created_at,
+        updated_at: row.updated_at
+    };
+}
+
+async function getCatWeightRecords() {
+    const result = await pool.query(`
+        SELECT id, recorded_at, mini_kg, rabi_kg, note, created_by, created_at, updated_at
+        FROM cat_weight_records
+        ORDER BY recorded_at ASC, created_at ASC
+    `);
+    return result.rows.map(formatCatWeightRecord);
+}
+
+async function getCatWeightRecordById(id) {
+    const result = await pool.query(`
+        SELECT id, recorded_at, mini_kg, rabi_kg, note, created_by, created_at, updated_at
+        FROM cat_weight_records
+        WHERE id = $1
+    `, [id]);
+    return formatCatWeightRecord(result.rows[0]);
+}
+
+async function getCatWeightRecordByDate(recordedAt) {
+    const result = await pool.query(`
+        SELECT id, recorded_at, mini_kg, rabi_kg, note, created_by, created_at, updated_at
+        FROM cat_weight_records
+        WHERE recorded_at = $1
+    `, [recordedAt]);
+    return formatCatWeightRecord(result.rows[0]);
+}
+
+async function createCatWeightRecord(recordedAt, miniKg, rabiKg, note, userId) {
+    const result = await pool.query(`
+        INSERT INTO cat_weight_records (recorded_at, mini_kg, rabi_kg, note, created_by)
+        VALUES ($1, $2, $3, $4, $5)
+        RETURNING id, recorded_at, mini_kg, rabi_kg, note, created_by, created_at, updated_at
+    `, [recordedAt, miniKg, rabiKg, note, userId]);
+    return formatCatWeightRecord(result.rows[0]);
+}
+
+async function updateCatWeightRecord(id, recordedAt, miniKg, rabiKg, note) {
+    const result = await pool.query(`
+        UPDATE cat_weight_records
+        SET recorded_at = $1, mini_kg = $2, rabi_kg = $3, note = $4, updated_at = CURRENT_TIMESTAMP
+        WHERE id = $5
+        RETURNING id, recorded_at, mini_kg, rabi_kg, note, created_by, created_at, updated_at
+    `, [recordedAt, miniKg, rabiKg, note, id]);
+    return formatCatWeightRecord(result.rows[0]);
+}
+
+async function upsertCatWeightRecord(recordedAt, miniKg, rabiKg, note, userId) {
+    const result = await pool.query(`
+        INSERT INTO cat_weight_records (recorded_at, mini_kg, rabi_kg, note, created_by)
+        VALUES ($1, $2, $3, $4, $5)
+        ON CONFLICT (recorded_at) DO UPDATE SET
+            mini_kg = COALESCE(EXCLUDED.mini_kg, cat_weight_records.mini_kg),
+            rabi_kg = COALESCE(EXCLUDED.rabi_kg, cat_weight_records.rabi_kg),
+            note = CASE
+                WHEN EXCLUDED.note IS NOT NULL AND EXCLUDED.note <> '' THEN EXCLUDED.note
+                ELSE cat_weight_records.note
+            END,
+            updated_at = CURRENT_TIMESTAMP
+        RETURNING id, recorded_at, mini_kg, rabi_kg, note, created_by, created_at, updated_at
+    `, [recordedAt, miniKg, rabiKg, note || null, userId]);
+    return formatCatWeightRecord(result.rows[0]);
+}
+
+async function deleteCatWeightRecord(id) {
+    const result = await pool.query(`DELETE FROM cat_weight_records WHERE id = $1`, [id]);
+    return result.rowCount > 0;
+}
+
 module.exports = {
     initializeDatabase,
     getUserByUsername,
@@ -389,5 +502,12 @@ module.exports = {
     getAssetSnapshotById,
     createAssetSnapshot,
     updateAssetSnapshot,
-    deleteAssetSnapshot
+    deleteAssetSnapshot,
+    getCatWeightRecords,
+    getCatWeightRecordById,
+    getCatWeightRecordByDate,
+    createCatWeightRecord,
+    updateCatWeightRecord,
+    upsertCatWeightRecord,
+    deleteCatWeightRecord
 };

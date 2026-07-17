@@ -1,10 +1,13 @@
 ﻿const express = require('express');
 const cors = require('cors');
 const path = require('path');
+const multer = require('multer');
+const XLSX = require('xlsx');
 const db = require('./database');
 const { verifyAuth, canModifyPost, signToken } = require('./middleware');
 const { CATEGORIES, isValidCategory, isPhotoCategory } = require('./categories');
 const { OWNERS, ASSET_TYPES, isValidOwner, isValidAssetType, getAssetTypeConfig } = require('./asset-categories');
+const { CATS } = require('./cat-categories');
 const {
     UPLOADS_DIR,
     postImagesUpload,
@@ -19,6 +22,19 @@ const PORT = process.env.PORT || 3000;
 const ADMIN_USERNAME = (process.env.ADMIN_USERNAME || '').trim();
 // 신규 가입을 임시로 막고 싶을 때 false로 변경
 const REGISTRATION_ENABLED = false;
+
+const excelUpload = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 5 * 1024 * 1024 },
+    fileFilter(req, file, cb) {
+        const allowed = /\.(xlsx|xls|csv)$/i.test(file.originalname);
+        if (allowed) {
+            cb(null, true);
+            return;
+        }
+        cb(new Error('Excel(.xlsx, .xls) 또는 CSV 파일만 업로드할 수 있습니다.'));
+    }
+});
 
 app.use(cors());
 app.use(express.json());
@@ -384,6 +400,48 @@ app.delete('/api/posts/:id', verifyAuth, async (req, res) => {
     }
 });
 
+let usdKrwRateCache = { rate: null, date: null, fetchedAt: 0 };
+const USD_KRW_CACHE_MS = 60 * 60 * 1000;
+
+async function fetchUsdKrwRate() {
+    const now = Date.now();
+    if (usdKrwRateCache.rate && (now - usdKrwRateCache.fetchedAt) < USD_KRW_CACHE_MS) {
+        return usdKrwRateCache;
+    }
+
+    const response = await fetch('https://api.frankfurter.app/latest?from=USD&to=KRW');
+    if (!response.ok) {
+        throw new Error(`Exchange rate fetch failed: ${response.status}`);
+    }
+
+    const data = await response.json();
+    const rate = data.rates && data.rates.KRW;
+    if (!rate) {
+        throw new Error('KRW rate not found');
+    }
+
+    usdKrwRateCache = {
+        rate: Math.round(Number(rate) * 100) / 100,
+        date: data.date,
+        fetchedAt: now
+    };
+    return usdKrwRateCache;
+}
+
+app.get('/api/exchange-rate/usd-krw', verifyAuth, async (req, res) => {
+    try {
+        const cached = await fetchUsdKrwRate();
+        res.json({
+            rate: cached.rate,
+            date: cached.date,
+            source: 'ECB 기준 (Frankfurter)'
+        });
+    } catch (error) {
+        console.error('[API] 환율 조회 오류:', error);
+        res.status(503).json({ message: '환율 정보를 불러오지 못했습니다.' });
+    }
+});
+
 app.get('/api/asset-meta', verifyAuth, (req, res) => {
     res.json({ owners: OWNERS, assetTypes: ASSET_TYPES });
 });
@@ -485,6 +543,301 @@ app.delete('/api/assets/snapshots/:id', verifyAuth, async (req, res) => {
         console.error('[API] 자산 스냅샷 삭제 오류:', error);
         res.status(500).json({ message: '자산 입력 기록을 삭제하지 못했습니다.' });
     }
+});
+
+const DATE_HEADER_KEYS = ['날짜', 'date', '기록일', '측정일', 'recorded_at', 'recorded at'];
+const MINI_HEADER_KEYS = ['미니', 'mini'];
+const RABI_HEADER_KEYS = ['라비', 'rabi', 'ravi'];
+
+function normalizeHeader(value) {
+    return String(value || '').trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+function findHeaderIndex(headers, candidates) {
+    return headers.findIndex(header => candidates.includes(header));
+}
+
+function formatYmdFromParts(year, month, day) {
+    return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+}
+
+function parseCatRecordedDate(value) {
+    if (value === null || value === undefined || value === '') {
+        return null;
+    }
+
+    if (value instanceof Date && !Number.isNaN(value.getTime())) {
+        return formatYmdFromParts(value.getFullYear(), value.getMonth() + 1, value.getDate());
+    }
+
+    if (typeof value === 'number') {
+        const parsed = XLSX.SSF.parse_date_code(value);
+        if (parsed) {
+            return formatYmdFromParts(parsed.y, parsed.m, parsed.d);
+        }
+    }
+
+    const raw = String(value).trim();
+    if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+        return raw;
+    }
+
+    const normalized = raw.replace(/[./]/g, '-');
+    const match = normalized.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+    if (match) {
+        return formatYmdFromParts(Number(match[1]), Number(match[2]), Number(match[3]));
+    }
+
+    const parsedDate = new Date(raw);
+    if (!Number.isNaN(parsedDate.getTime())) {
+        return formatYmdFromParts(parsedDate.getFullYear(), parsedDate.getMonth() + 1, parsedDate.getDate());
+    }
+
+    return null;
+}
+
+function parseCatWeightValue(value) {
+    if (value === null || value === undefined || value === '') {
+        return null;
+    }
+    const num = Number(String(value).replace(/,/g, '').trim());
+    if (Number.isNaN(num) || num <= 0) {
+        return null;
+    }
+    return Math.round(num * 100) / 100;
+}
+
+function normalizeManualCatWeightPayload(body, existingMiniKg = null) {
+    const recordedAt = parseCatRecordedDate(body.recordedAt);
+    const rabiKg = parseCatWeightValue(body.rabiKg);
+    const note = typeof body.note === 'string' ? body.note.trim().slice(0, 200) : '';
+
+    if (!recordedAt) {
+        return { error: '날짜를 올바르게 입력해주세요.' };
+    }
+    if (rabiKg === null) {
+        return { error: '라비 몸무게를 입력해주세요.' };
+    }
+
+    return {
+        recordedAt,
+        miniKg: existingMiniKg,
+        rabiKg,
+        note
+    };
+}
+
+function normalizeCatWeightPayload(body) {
+    const recordedAt = parseCatRecordedDate(body.recordedAt);
+    const miniKg = parseCatWeightValue(body.miniKg);
+    const rabiKg = parseCatWeightValue(body.rabiKg);
+    const note = typeof body.note === 'string' ? body.note.trim().slice(0, 200) : '';
+
+    if (!recordedAt) {
+        return { error: '날짜를 올바르게 입력해주세요.' };
+    }
+    if (miniKg === null && rabiKg === null) {
+        return { error: '미니 또는 라비 몸무게를 1개 이상 입력해주세요.' };
+    }
+
+    return { recordedAt, miniKg, rabiKg, note };
+}
+
+function parseCatWeightWorkbook(buffer) {
+    const workbook = XLSX.read(buffer, { type: 'buffer', cellDates: true });
+    const sheetName = workbook.SheetNames[0];
+    if (!sheetName) {
+        return { error: '시트를 찾을 수 없습니다.' };
+    }
+
+    const rows = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], {
+        header: 1,
+        raw: true,
+        defval: ''
+    });
+
+    if (!rows.length) {
+        return { error: '엑셀에 데이터가 없습니다.' };
+    }
+
+    let headerRowIndex = -1;
+    let dateIndex = -1;
+    let miniIndex = -1;
+    let rabiIndex = -1;
+
+    for (let i = 0; i < Math.min(rows.length, 20); i++) {
+        const headers = rows[i].map(cell => normalizeHeader(cell));
+        const foundDate = findHeaderIndex(headers, DATE_HEADER_KEYS);
+        const foundMini = findHeaderIndex(headers, MINI_HEADER_KEYS);
+        const foundRabi = findHeaderIndex(headers, RABI_HEADER_KEYS);
+        if (foundDate !== -1 && (foundMini !== -1 || foundRabi !== -1)) {
+            headerRowIndex = i;
+            dateIndex = foundDate;
+            miniIndex = foundMini;
+            rabiIndex = foundRabi;
+            break;
+        }
+    }
+
+    if (headerRowIndex === -1) {
+        return { error: '헤더 행을 찾을 수 없습니다. (날짜, 미니, 라비 열 필요)' };
+    }
+
+    const records = [];
+    const skipped = [];
+
+    for (let i = headerRowIndex + 1; i < rows.length; i++) {
+        const row = rows[i];
+        const recordedAt = parseCatRecordedDate(row[dateIndex]);
+        const miniKg = miniIndex === -1 ? null : parseCatWeightValue(row[miniIndex]);
+        const rabiKg = rabiIndex === -1 ? null : parseCatWeightValue(row[rabiIndex]);
+
+        if (!recordedAt && miniKg === null && rabiKg === null) {
+            continue;
+        }
+        if (!recordedAt) {
+            skipped.push({ row: i + 1, reason: '날짜 형식 오류' });
+            continue;
+        }
+        if (miniKg === null && rabiKg === null) {
+            skipped.push({ row: i + 1, reason: '몸무게 없음' });
+            continue;
+        }
+
+        records.push({ recordedAt, miniKg, rabiKg, note: '' });
+    }
+
+    if (!records.length) {
+        return { error: '가져올 유효한 기록이 없습니다.', skipped };
+    }
+
+    return { records, skipped };
+}
+
+app.get('/api/cat-meta', verifyAuth, (req, res) => {
+    res.json({ cats: CATS });
+});
+
+app.get('/api/cat-weights', verifyAuth, async (req, res) => {
+    try {
+        const records = await db.getCatWeightRecords();
+        res.json(records);
+    } catch (error) {
+        console.error('[API] 고양이 몸무게 목록 조회 오류:', error);
+        res.status(500).json({ message: '몸무게 기록을 불러오지 못했습니다.' });
+    }
+});
+
+app.post('/api/cat-weights', verifyAuth, async (req, res) => {
+    try {
+        const normalized = normalizeManualCatWeightPayload(req.body);
+        if (normalized.error) {
+            return res.status(400).json({ message: normalized.error });
+        }
+
+        const existing = await db.getCatWeightRecordByDate(normalized.recordedAt);
+        if (existing) {
+            return res.status(400).json({ message: '같은 날짜의 기록이 이미 있습니다. 수정하거나 엑셀 가져오기를 사용해주세요.' });
+        }
+
+        const record = await db.createCatWeightRecord(
+            normalized.recordedAt,
+            normalized.miniKg,
+            normalized.rabiKg,
+            normalized.note,
+            req.user.userId
+        );
+        res.status(201).json({ message: '몸무게 기록이 저장되었습니다.', record });
+    } catch (error) {
+        console.error('[API] 고양이 몸무게 저장 오류:', error);
+        res.status(500).json({ message: '몸무게 기록을 저장하지 못했습니다.' });
+    }
+});
+
+app.put('/api/cat-weights/:id', verifyAuth, async (req, res) => {
+    try {
+        const existing = await db.getCatWeightRecordById(req.params.id);
+        if (!existing) {
+            return res.status(404).json({ message: '몸무게 기록을 찾을 수 없습니다.' });
+        }
+
+        const normalized = normalizeManualCatWeightPayload(req.body, existing.mini_kg);
+        if (normalized.error) {
+            return res.status(400).json({ message: normalized.error });
+        }
+
+        const duplicate = await db.getCatWeightRecordByDate(normalized.recordedAt);
+        if (duplicate && duplicate.id !== req.params.id) {
+            return res.status(400).json({ message: '같은 날짜의 다른 기록이 이미 있습니다.' });
+        }
+
+        const record = await db.updateCatWeightRecord(
+            req.params.id,
+            normalized.recordedAt,
+            normalized.miniKg,
+            normalized.rabiKg,
+            normalized.note
+        );
+        res.json({ message: '몸무게 기록이 수정되었습니다.', record });
+    } catch (error) {
+        console.error('[API] 고양이 몸무게 수정 오류:', error);
+        res.status(500).json({ message: '몸무게 기록을 수정하지 못했습니다.' });
+    }
+});
+
+app.delete('/api/cat-weights/:id', verifyAuth, async (req, res) => {
+    try {
+        const deleted = await db.deleteCatWeightRecord(req.params.id);
+        if (!deleted) {
+            return res.status(404).json({ message: '몸무게 기록을 찾을 수 없습니다.' });
+        }
+        res.json({ message: '몸무게 기록이 삭제되었습니다.' });
+    } catch (error) {
+        console.error('[API] 고양이 몸무게 삭제 오류:', error);
+        res.status(500).json({ message: '몸무게 기록을 삭제하지 못했습니다.' });
+    }
+});
+
+app.post('/api/cat-weights/import', verifyAuth, (req, res) => {
+    excelUpload.single('file')(req, res, async (uploadError) => {
+        if (uploadError) {
+            return res.status(400).json({ message: uploadError.message || '파일 업로드에 실패했습니다.' });
+        }
+        if (!req.file) {
+            return res.status(400).json({ message: '엑셀 파일을 선택해주세요.' });
+        }
+
+        try {
+            const parsed = parseCatWeightWorkbook(req.file.buffer);
+            if (parsed.error) {
+                return res.status(400).json({
+                    message: parsed.error,
+                    skipped: parsed.skipped || []
+                });
+            }
+
+            let imported = 0;
+            for (const item of parsed.records) {
+                await db.upsertCatWeightRecord(
+                    item.recordedAt,
+                    item.miniKg,
+                    item.rabiKg,
+                    item.note,
+                    req.user.userId
+                );
+                imported += 1;
+            }
+
+            res.json({
+                message: `${imported}건의 몸무게 기록을 가져왔습니다.`,
+                imported,
+                skipped: parsed.skipped || []
+            });
+        } catch (error) {
+            console.error('[API] 고양이 몸무게 엑셀 가져오기 오류:', error);
+            res.status(500).json({ message: '엑셀 파일을 처리하지 못했습니다.' });
+        }
+    });
 });
 
 app.listen(PORT, () => {

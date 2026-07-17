@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" href="logo/logo.jpg">
+    <link rel="apple-touch-icon" href="logo/logo.jpg">
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#667eea">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-title" content="기록">
+    <title>고양이 - 기록</title>
+    <link rel="stylesheet" href="style.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+</head>
+<body>
+    <div class="container">
+        <nav class="app-tabs">
+            <a href="index.html" class="app-tab">기록</a>
+            <a href="assets.html" class="app-tab">자산관리</a>
+            <a href="cats.html" class="app-tab active">고양이</a>
+        </nav>
+
+        <header>
+            <h1>고양이</h1>
+            <div class="header-actions">
+                <div id="user-header"></div>
+            </div>
+        </header>
+
+        <main>
+            <div class="board-header">
+                <div class="board-info" style="margin-top: 0;">
+                    몸무게 기록 <span id="record-count">0</span>건
+                </div>
+            </div>
+
+            <div id="loading" class="loading">몸무게 기록을 불러오는 중...</div>
+
+            <div id="cat-content" style="display: none;">
+                <div class="cat-panel">
+                    <h3>라비 몸무게 입력</h3>
+                    <form id="weight-form" class="cat-weight-form">
+                        <input type="hidden" id="edit-id">
+                        <div class="cat-form-grid cat-form-grid-manual">
+                            <div class="form-group">
+                                <label for="recorded-at">날짜</label>
+                                <input type="date" id="recorded-at" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="rabi-kg">라비 (kg)</label>
+                                <input type="number" id="rabi-kg" step="0.01" min="0" placeholder="예: 5.20" required>
+                            </div>
+                            <div class="form-group cat-note-field">
+                                <label for="note">메모 (선택)</label>
+                                <input type="text" id="note" maxlength="200" placeholder="메모">
+                            </div>
+                        </div>
+                        <div class="form-actions cat-form-actions">
+                            <button type="submit" class="btn btn-primary" id="save-btn">저장</button>
+                            <button type="button" class="btn btn-secondary" id="cancel-edit-btn" style="display: none;">취소</button>
+                        </div>
+                    </form>
+                </div>
+
+                <div class="cat-panel">
+                    <h3>엑셀 가져오기</h3>
+                    <p class="cat-import-help">미니 과거 기록은 엑셀로 가져옵니다. 첫 시트에 <strong>날짜 · 미니 · 라비</strong> 열이 있으면 됩니다. 같은 날짜는 덮어씁니다.</p>
+                    <form id="import-form" class="cat-import-form">
+                        <input type="file" id="excel-file" accept=".xlsx,.xls,.csv" required>
+                        <button type="submit" class="btn btn-secondary">엑셀 불러오기</button>
+                    </form>
+                    <div id="import-result" class="auth-result"></div>
+                </div>
+
+                <div class="chart-section-header">
+                    <h3>몸무게 변화</h3>
+                </div>
+                <div class="chart-card wide">
+                    <canvas id="chart-cat-weight"></canvas>
+                </div>
+
+                <div class="chart-section-header">
+                    <h3>기록 목록</h3>
+                </div>
+                <div class="snapshot-table-wrap">
+                    <table class="snapshot-table cat-weight-table">
+                        <thead>
+                            <tr>
+                                <th>날짜</th>
+                                <th>미니</th>
+                                <th>라비</th>
+                                <th>메모</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody id="weight-table-body"></tbody>
+                    </table>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script src="auth.js"></script>
+    <script src="cats.js"></script>
+    <script>
+        if (!requireAuth()) {
+            throw new Error('Auth required');
+        }
+
+        renderUserHeader('user-header');
+
+        let allRecords = [];
+        let weightChart = null;
+
+        document.getElementById('recorded-at').value = getKstDateString();
+        loadRecords();
+
+        document.getElementById('weight-form').addEventListener('submit', saveRecord);
+        document.getElementById('cancel-edit-btn').addEventListener('click', resetForm);
+        document.getElementById('import-form').addEventListener('submit', importExcel);
+
+        async function loadRecords() {
+            try {
+                const response = await authFetch('/api/cat-weights');
+                const data = await response.json();
+
+                if (!response.ok) {
+                    alert(data.message || '몸무게 기록을 불러오지 못했습니다.');
+                    return;
+                }
+
+                allRecords = data;
+                document.getElementById('loading').style.display = 'none';
+                document.getElementById('cat-content').style.display = 'block';
+                document.getElementById('record-count').textContent = allRecords.length;
+                renderAll();
+            } catch (error) {
+                if (error.message !== 'Unauthorized') {
+                    console.error('몸무게 기록 로드 오류:', error);
+                    document.getElementById('loading').textContent = '몸무게 기록을 불러오지 못했습니다.';
+                }
+            }
+        }
+
+        function renderAll() {
+            renderChart();
+            renderTable();
+        }
+
+        function renderChart() {
+            const history = buildCatHistorySeries(allRecords);
+            weightChart = renderCatWeightChart('chart-cat-weight', history, weightChart);
+        }
+
+        function renderTable() {
+            const tbody = document.getElementById('weight-table-body');
+            const sorted = [...allRecords].reverse();
+
+            tbody.innerHTML = sorted.map(record => `
+                <tr>
+                    <td>${record.recorded_at}</td>
+                    <td>${formatWeightKg(record.mini_kg)}</td>
+                    <td>${formatWeightKg(record.rabi_kg)}</td>
+                    <td>${escapeHtml(record.note || '')}</td>
+                    <td class="snapshot-table-actions">
+                        <button type="button" class="btn btn-secondary btn-sm" onclick="editRecord('${record.id}')">수정</button>
+                        <button type="button" class="btn btn-danger btn-sm" onclick="deleteRecord('${record.id}')">삭제</button>
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        function resetForm() {
+            document.getElementById('edit-id').value = '';
+            document.getElementById('recorded-at').value = getKstDateString();
+            document.getElementById('rabi-kg').value = '';
+            document.getElementById('note').value = '';
+            document.getElementById('save-btn').textContent = '저장';
+            document.getElementById('cancel-edit-btn').style.display = 'none';
+        }
+
+        function editRecord(id) {
+            const record = allRecords.find(item => item.id === id);
+            if (!record) {
+                return;
+            }
+
+            document.getElementById('edit-id').value = record.id;
+            document.getElementById('recorded-at').value = String(record.recorded_at).substring(0, 10);
+            document.getElementById('rabi-kg').value = record.rabi_kg ?? '';
+            document.getElementById('note').value = record.note || '';
+            document.getElementById('save-btn').textContent = '수정';
+            document.getElementById('cancel-edit-btn').style.display = '';
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+
+        async function saveRecord(event) {
+            event.preventDefault();
+
+            const editId = document.getElementById('edit-id').value;
+            const payload = {
+                recordedAt: document.getElementById('recorded-at').value,
+                rabiKg: document.getElementById('rabi-kg').value,
+                note: document.getElementById('note').value
+            };
+
+            try {
+                const response = await authFetch(
+                    editId ? `/api/cat-weights/${editId}` : '/api/cat-weights',
+                    {
+                        method: editId ? 'PUT' : 'POST',
+                        body: JSON.stringify(payload)
+                    }
+                );
+                const result = await response.json();
+
+                if (response.ok) {
+                    resetForm();
+                    loadRecords();
+                } else {
+                    alert(result.message);
+                }
+            } catch (error) {
+                if (error.message !== 'Unauthorized') {
+                    console.error('몸무게 저장 오류:', error);
+                    alert('몸무게 기록을 저장하지 못했습니다.');
+                }
+            }
+        }
+
+        async function deleteRecord(id) {
+            if (!confirm('이 몸무게 기록을 삭제하시겠습니까?')) {
+                return;
+            }
+
+            try {
+                const response = await authFetch(`/api/cat-weights/${id}`, { method: 'DELETE' });
+                const result = await response.json();
+
+                if (response.ok) {
+                    loadRecords();
+                } else {
+                    alert(result.message);
+                }
+            } catch (error) {
+                if (error.message !== 'Unauthorized') {
+                    console.error('몸무게 삭제 오류:', error);
+                    alert('몸무게 기록을 삭제하지 못했습니다.');
+                }
+            }
+        }
+
+        async function importExcel(event) {
+            event.preventDefault();
+
+            const fileInput = document.getElementById('excel-file');
+            const resultDiv = document.getElementById('import-result');
+            const file = fileInput.files[0];
+
+            if (!file) {
+                resultDiv.textContent = '엑셀 파일을 선택해주세요.';
+                resultDiv.className = 'auth-result error';
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('file', file);
+
+            try {
+                const response = await authFetch('/api/cat-weights/import', {
+                    method: 'POST',
+                    body: formData
+                });
+                const result = await response.json();
+
+                if (response.ok) {
+                    let message = result.message;
+                    if (result.skipped && result.skipped.length) {
+                        message += ` (건너뜀 ${result.skipped.length}행)`;
+                    }
+                    resultDiv.textContent = message;
+                    resultDiv.className = 'auth-result success';
+                    fileInput.value = '';
+                    loadRecords();
+                } else {
+                    resultDiv.textContent = result.message;
+                    resultDiv.className = 'auth-result error';
+                }
+            } catch (error) {
+                if (error.message !== 'Unauthorized') {
+                    console.error('엑셀 가져오기 오류:', error);
+                    resultDiv.textContent = '엑셀 파일을 불러오지 못했습니다.';
+                    resultDiv.className = 'auth-result error';
+                }
+            }
+        }
+    </script>
+</body>
+</html>
