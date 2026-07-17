@@ -98,8 +98,75 @@ function formatPercent(rate) {
     return `${sign}${value.toFixed(2)}%`;
 }
 
+function computePrincipal(currentValue, returnRatePercent) {
+    if (!currentValue || returnRatePercent === null || returnRatePercent === undefined || Number.isNaN(Number(returnRatePercent))) {
+        return null;
+    }
+    const rateDecimal = Number(returnRatePercent) / 100;
+    if (rateDecimal <= -1) {
+        return null;
+    }
+    return currentValue / (1 + rateDecimal);
+}
+
+function computeInvestmentSummary(entries, ownerFilter) {
+    let principalSum = 0;
+    let currentSum = 0;
+
+    (entries || []).forEach(entry => {
+        if (ownerFilter && entry.owner !== ownerFilter) {
+            return;
+        }
+        const type = getAssetTypeDef(entry.asset_type);
+        if (!type || !type.hasReturnRate) {
+            return;
+        }
+
+        const currentValue = Number(entry.amount_krw) || 0;
+        const rate = entry.return_rate === null || entry.return_rate === undefined ? 0 : Number(entry.return_rate);
+        const principal = computePrincipal(currentValue, rate);
+
+        principalSum += principal === null ? currentValue : principal;
+        currentSum += currentValue;
+    });
+
+    const profit = currentSum - principalSum;
+    const returnRate = principalSum ? (profit / principalSum) * 100 : 0;
+
+    return { principal: principalSum, current: currentSum, profit, returnRate };
+}
+
 function sumEntries(entries, filterFn) {
     return (entries || []).filter(filterFn).reduce((sum, entry) => sum + Number(entry.amount_krw), 0);
+}
+
+function computeTypeInvestment(entries, typeKey, owner) {
+    const type = getAssetTypeDef(typeKey);
+    if (!type || !type.hasReturnRate) {
+        return null;
+    }
+
+    let principalSum = 0;
+    let currentSum = 0;
+
+    (entries || []).forEach(entry => {
+        if (entry.asset_type !== typeKey) {
+            return;
+        }
+        if (owner && entry.owner !== owner) {
+            return;
+        }
+
+        const currentValue = Number(entry.amount_krw) || 0;
+        const rate = entry.return_rate === null || entry.return_rate === undefined ? 0 : Number(entry.return_rate);
+        const principal = computePrincipal(currentValue, rate);
+
+        principalSum += principal === null ? currentValue : principal;
+        currentSum += currentValue;
+    });
+
+    const returnRate = principalSum ? ((currentSum - principalSum) / principalSum) * 100 : 0;
+    return { principal: principalSum, current: currentSum, returnRate };
 }
 
 function computeOwnerComposition(entries, owner) {
@@ -108,7 +175,8 @@ function computeOwnerComposition(entries, owner) {
             type: type.key,
             label: type.label,
             color: ASSET_TYPE_COLORS[type.key],
-            amount: sumEntries(entries, entry => entry.owner === owner && entry.asset_type === type.key)
+            amount: sumEntries(entries, entry => entry.owner === owner && entry.asset_type === type.key),
+            investment: computeTypeInvestment(entries, type.key, owner)
         }))
         .filter(item => item.amount > 0);
 }
@@ -119,7 +187,8 @@ function computeTotalComposition(entries) {
             type: type.key,
             label: type.label,
             color: ASSET_TYPE_COLORS[type.key],
-            amount: sumEntries(entries, entry => entry.asset_type === type.key)
+            amount: sumEntries(entries, entry => entry.asset_type === type.key),
+            investment: computeTypeInvestment(entries, type.key, null)
         }))
         .filter(item => item.amount > 0);
 }
@@ -181,6 +250,7 @@ function renderPieChart(canvasId, compositionItems, existingChart) {
             plugins: {
                 legend: {
                     position: 'bottom',
+                    align: 'start',
                     labels: {
                         generateLabels(chart) {
                             const data = chart.data.datasets[0].data;
@@ -188,8 +258,17 @@ function renderPieChart(canvasId, compositionItems, existingChart) {
                             return chart.data.labels.map((label, index) => {
                                 const value = data[index];
                                 const percent = total ? ((value / total) * 100).toFixed(1) : '0.0';
+                                const amount = Math.round(value / 10000).toLocaleString('ko-KR');
+                                let text = `${label} ${amount} (${percent}%)`;
+
+                                const investment = compositionItems[index] && compositionItems[index].investment;
+                                if (investment) {
+                                    const principalManwon = Math.round(investment.principal / 10000).toLocaleString('ko-KR');
+                                    text += ` · 원금 ${principalManwon} ${formatPercent(investment.returnRate)}`;
+                                }
+
                                 return {
-                                    text: `${label} ${formatManwon(value)} (${percent}%)`,
+                                    text,
                                     fillStyle: chart.data.datasets[0].backgroundColor[index],
                                     index
                                 };
@@ -215,7 +294,8 @@ function renderPieChart(canvasId, compositionItems, existingChart) {
                         const data = context.dataset.data;
                         const total = data.reduce((sum, item) => sum + item, 0);
                         const percent = total ? ((value / total) * 100).toFixed(1) : '0.0';
-                        return [formatManwon(value), `(${percent}%)`];
+                        const amount = Math.round(value / 10000).toLocaleString('ko-KR');
+                        return [amount, `(${percent}%)`];
                     }
                 }
             }

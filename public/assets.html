@@ -25,8 +25,7 @@
 
         <main>
             <div class="board-header">
-                <div id="owner-tabs" class="category-tabs"></div>
-                <div class="board-info">
+                <div class="board-info" style="margin-top: 0;">
                     입력 기록 <span id="snapshot-count">0</span>건
                 </div>
             </div>
@@ -91,33 +90,13 @@
         renderUserHeader('user-header');
 
         let allSnapshots = [];
-        let currentOwnerFilter = '';
         let currentSnapshotId = null;
         let currentTrendMode = 'total';
         let compositionCharts = {};
         let trendChart = null;
 
-        renderOwnerTabs();
         renderTrendModeTabs();
         loadSnapshots();
-
-        function renderOwnerTabs() {
-            const container = document.getElementById('owner-tabs');
-            const tabs = [{ label: '전체', value: '' }, ...ASSET_OWNERS.map(owner => ({ label: owner.label, value: owner.key }))];
-
-            container.innerHTML = tabs.map(tab => {
-                const activeClass = tab.value === currentOwnerFilter ? ' active' : '';
-                return `<button type="button" class="category-tab${activeClass}" data-owner="${tab.value}">${tab.label}</button>`;
-            }).join('');
-
-            container.querySelectorAll('.category-tab').forEach(button => {
-                button.addEventListener('click', () => {
-                    currentOwnerFilter = button.dataset.owner;
-                    renderOwnerTabs();
-                    renderAll();
-                });
-            });
-        }
 
         function renderTrendModeTabs() {
             const container = document.getElementById('trend-mode-tabs');
@@ -198,41 +177,52 @@
             const container = document.getElementById('summary-cards');
             const jaesikTotal = computeOwnerTotal(latest.entries, 'jaesik');
             const jieunTotal = computeOwnerTotal(latest.entries, 'jieun');
-            const cards = [];
+            const totalAmount = jaesikTotal + jieunTotal;
 
-            if (!currentOwnerFilter || currentOwnerFilter === 'jaesik') {
-                cards.push({ label: `${getOwnerLabel('jaesik')} 총자산`, value: jaesikTotal });
-            }
-            if (!currentOwnerFilter || currentOwnerFilter === 'jieun') {
-                cards.push({ label: `${getOwnerLabel('jieun')} 총자산`, value: jieunTotal });
-            }
-            if (!currentOwnerFilter) {
-                cards.push({ label: '전체 총자산', value: jaesikTotal + jieunTotal });
-            }
+            const totalInvestment = computeInvestmentSummary(latest.entries, null);
+            const jaesikInvestment = computeInvestmentSummary(latest.entries, 'jaesik');
+            const jieunInvestment = computeInvestmentSummary(latest.entries, 'jieun');
 
-            container.innerHTML = cards.map(card => `
-                <div class="summary-card">
-                    <div class="summary-label">${card.label}</div>
-                    <div class="summary-value">${formatKrw(card.value)}</div>
+            const renderInvestmentLine = summary => `
+                <div class="summary-investment">
+                    원금 ${formatKrw(summary.principal)}
+                    <span class="summary-rate ${summary.returnRate >= 0 ? 'positive' : 'negative'}">${formatPercent(summary.returnRate)}</span>
+                </div>
+            `;
+
+            container.innerHTML = `
+                <div class="summary-card-combined">
+                    <div class="summary-row">
+                        <div class="summary-item">
+                            <div class="summary-label">전체 총자산</div>
+                            <div class="summary-value">${formatKrw(totalAmount)}</div>
+                            ${renderInvestmentLine(totalInvestment)}
+                        </div>
+                        <div class="summary-item">
+                            <div class="summary-label">${getOwnerLabel('jaesik')}</div>
+                            <div class="summary-value">${formatKrw(jaesikTotal)}</div>
+                            ${renderInvestmentLine(jaesikInvestment)}
+                        </div>
+                        <div class="summary-item">
+                            <div class="summary-label">${getOwnerLabel('jieun')}</div>
+                            <div class="summary-value">${formatKrw(jieunTotal)}</div>
+                            ${renderInvestmentLine(jieunInvestment)}
+                        </div>
+                    </div>
                     <div class="summary-sub">${latest.recorded_at} 기준 · 환율 ${Number(latest.usd_krw).toLocaleString('ko-KR')}원</div>
                 </div>
-            `).join('');
+            `;
         }
 
         function renderComposition() {
             const snapshot = allSnapshots.find(item => item.id === currentSnapshotId) || allSnapshots[allSnapshots.length - 1];
             const grid = document.getElementById('composition-grid');
-            const cards = [];
 
-            if (!currentOwnerFilter || currentOwnerFilter === 'jaesik') {
-                cards.push({ id: 'chart-jaesik', title: `${getOwnerLabel('jaesik')} 자산구성`, owner: 'jaesik' });
-            }
-            if (!currentOwnerFilter || currentOwnerFilter === 'jieun') {
-                cards.push({ id: 'chart-jieun', title: `${getOwnerLabel('jieun')} 자산구성`, owner: 'jieun' });
-            }
-            if (!currentOwnerFilter) {
-                cards.push({ id: 'chart-total', title: '전체 자산구성', owner: null });
-            }
+            const cards = [
+                { id: 'chart-jaesik', title: `${getOwnerLabel('jaesik')} 자산구성`, owner: 'jaesik' },
+                { id: 'chart-jieun', title: `${getOwnerLabel('jieun')} 자산구성`, owner: 'jieun' },
+                { id: 'chart-total', title: '전체 자산구성', owner: null }
+            ];
 
             grid.innerHTML = cards.map(card => `
                 <div class="chart-card">

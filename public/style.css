@@ -618,36 +618,75 @@ main {
 }
 
 .asset-summary-cards {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-    gap: 16px;
-    margin-bottom: 30px;
+    margin-bottom: 22px;
 }
 
-.summary-card {
+.summary-card-combined {
     background: linear-gradient(135deg, #667eea, #764ba2);
     color: white;
-    border-radius: 12px;
-    padding: 18px 20px;
+    border-radius: 10px;
+    padding: 14px 18px;
     box-shadow: 0 4px 15px rgba(102, 126, 234, 0.25);
 }
 
+.summary-row {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+}
+
+.summary-item {
+    padding-left: 12px;
+    border-left: 1px solid rgba(255, 255, 255, 0.25);
+}
+
+.summary-item:first-child {
+    padding-left: 0;
+    border-left: none;
+}
+
 .summary-label {
-    font-size: 13px;
-    opacity: 0.9;
-    margin-bottom: 8px;
+    font-size: 12px;
+    opacity: 0.85;
+    margin-bottom: 4px;
     font-weight: 600;
+    white-space: nowrap;
 }
 
 .summary-value {
-    font-size: 24px;
+    font-size: 17px;
     font-weight: 700;
-    margin-bottom: 6px;
+    white-space: nowrap;
 }
 
 .summary-sub {
-    font-size: 12px;
-    opacity: 0.85;
+    margin-top: 8px;
+    padding-top: 8px;
+    border-top: 1px solid rgba(255, 255, 255, 0.2);
+    font-size: 11px;
+    opacity: 0.8;
+}
+
+.summary-investment {
+    margin-top: 4px;
+    font-size: 11px;
+    opacity: 0.9;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+
+.summary-rate {
+    font-weight: 700;
+}
+
+.summary-rate.positive {
+    color: #c6f6d5;
+}
+
+.summary-rate.negative {
+    color: #fed7d7;
 }
 
 .chart-section-header {
@@ -1058,8 +1097,30 @@ main {
         font-size: 13px;
     }
 
-    .asset-summary-cards {
-        grid-template-columns: 1fr;
+    .summary-card-combined {
+        padding: 12px 14px;
+    }
+
+    .summary-row {
+        gap: 4px;
+    }
+
+    .summary-item {
+        padding-left: 8px;
+    }
+
+    .summary-label {
+        font-size: 10px;
+        white-space: normal;
+    }
+
+    .summary-value {
+        font-size: 13px;
+        white-space: normal;
+    }
+
+    .summary-investment {
+        font-size: 10px;
     }
 
     .chart-grid {
