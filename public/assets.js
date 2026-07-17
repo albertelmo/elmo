@@ -222,6 +222,37 @@ function buildHistorySeries(snapshots) {
     });
 }
 
+function renderPieLegend(canvasId, compositionItems) {
+    const container = document.getElementById(`${canvasId}-legend`);
+    if (!container) {
+        return;
+    }
+
+    const total = compositionItems.reduce((sum, item) => sum + item.amount, 0);
+
+    container.innerHTML = compositionItems.map(item => {
+        const percent = total ? ((item.amount / total) * 100).toFixed(1) : '0.0';
+        const amount = Math.round(item.amount / 10000).toLocaleString('ko-KR');
+        const typeDef = getAssetTypeDef(item.type);
+        const investment = typeDef && typeDef.hasReturnRate ? item.investment : null;
+
+        let extra = '';
+        if (investment) {
+            const principalManwon = Math.round(investment.principal / 10000).toLocaleString('ko-KR');
+            // 국내 주식 관용 표기: 상승(빨강) / 하락(파랑)
+            const rateClass = investment.returnRate > 0 ? 'rate-up' : investment.returnRate < 0 ? 'rate-down' : '';
+            extra = ` · 원금 ${principalManwon} <span class="pie-legend-rate ${rateClass}">${formatPercent(investment.returnRate)}</span>`;
+        }
+
+        return `
+            <div class="pie-legend-item">
+                <span class="pie-legend-swatch" style="background:${item.color}"></span>
+                <span class="pie-legend-text">${item.label} ${amount} (${percent}%)${extra}</span>
+            </div>
+        `;
+    }).join('');
+}
+
 function renderPieChart(canvasId, compositionItems, existingChart) {
     if (existingChart) {
         existingChart.destroy();
@@ -231,6 +262,8 @@ function renderPieChart(canvasId, compositionItems, existingChart) {
     if (!canvas) {
         return null;
     }
+
+    renderPieLegend(canvasId, compositionItems);
 
     if (!compositionItems.length) {
         return null;
@@ -250,34 +283,7 @@ function renderPieChart(canvasId, compositionItems, existingChart) {
             responsive: true,
             plugins: {
                 legend: {
-                    position: 'bottom',
-                    align: 'start',
-                    labels: {
-                        generateLabels(chart) {
-                            const data = chart.data.datasets[0].data;
-                            const total = data.reduce((sum, value) => sum + value, 0);
-                            return chart.data.labels.map((label, index) => {
-                                const value = data[index];
-                                const percent = total ? ((value / total) * 100).toFixed(1) : '0.0';
-                                const amount = Math.round(value / 10000).toLocaleString('ko-KR');
-                                let text = `${label} ${amount} (${percent}%)`;
-
-                                const item = compositionItems[index];
-                                const typeDef = item && getAssetTypeDef(item.type);
-                                const investment = typeDef && typeDef.hasReturnRate ? item.investment : null;
-                                if (investment) {
-                                    const principalManwon = Math.round(investment.principal / 10000).toLocaleString('ko-KR');
-                                    text += ` · 원금 ${principalManwon} ${formatPercent(investment.returnRate)}`;
-                                }
-
-                                return {
-                                    text,
-                                    fillStyle: chart.data.datasets[0].backgroundColor[index],
-                                    index
-                                };
-                            });
-                        }
-                    }
+                    display: false
                 },
                 tooltip: {
                     callbacks: {

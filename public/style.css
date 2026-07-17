@@ -687,12 +687,47 @@ main {
     font-weight: 700;
 }
 
+/* 국내 주식 관용 표기: 상승(빨강) / 하락(파랑) */
 .summary-rate.positive {
-    color: #c6f6d5;
+    color: #ff8a80;
 }
 
 .summary-rate.negative {
-    color: #fed7d7;
+    color: #90caf9;
+}
+
+.pie-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 14px;
+    margin-top: 12px;
+    font-size: 12px;
+    color: #4a5568;
+}
+
+.pie-legend-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.pie-legend-swatch {
+    width: 10px;
+    height: 10px;
+    border-radius: 2px;
+    flex-shrink: 0;
+}
+
+.pie-legend-rate {
+    font-weight: 700;
+}
+
+.pie-legend-rate.rate-up {
+    color: #e53935;
+}
+
+.pie-legend-rate.rate-down {
+    color: #1e88e5;
 }
 
 .chart-section-header {
@@ -1129,6 +1164,11 @@ main {
 
     .summary-investment {
         font-size: 10px;
+    }
+
+    .pie-legend {
+        font-size: 11px;
+        gap: 4px 10px;
     }
 
     .chart-grid {
