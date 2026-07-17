@@ -37,7 +37,7 @@
                 <div id="register-result" class="auth-result"></div>
 
                 <div class="form-actions">
-                    <button type="submit" class="btn btn-primary">가입하기</button>
+                    <button type="submit" id="register-submit-btn" class="btn btn-primary">가입하기</button>
                 </div>
 
                 <p class="auth-link">
@@ -50,6 +50,26 @@
     <script src="auth.js"></script>
     <script>
         redirectIfLoggedIn();
+        checkRegistrationStatus();
+
+        async function checkRegistrationStatus() {
+            try {
+                const response = await fetch('/api/auth/register-status');
+                const data = await response.json();
+
+                if (!data.enabled) {
+                    const resultDiv = document.getElementById('register-result');
+                    resultDiv.textContent = '현재 회원가입이 잠시 중단되었습니다.';
+                    resultDiv.className = 'auth-result error';
+
+                    const submitBtn = document.getElementById('register-submit-btn');
+                    submitBtn.disabled = true;
+                    submitBtn.textContent = '가입 중단됨';
+                }
+            } catch (error) {
+                console.error('회원가입 상태 확인 오류:', error);
+            }
+        }
 
         document.getElementById('register-form').addEventListener('submit', async function(e) {
             e.preventDefault();

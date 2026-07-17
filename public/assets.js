@@ -118,10 +118,11 @@ function computeInvestmentSummary(entries, ownerFilter) {
             return;
         }
         const type = getAssetTypeDef(entry.asset_type);
-        if (!type || !type.hasReturnRate) {
+        if (!type) {
             return;
         }
 
+        // 수익률 입력이 없는 자산(예: 예금)은 변동이 없는 것으로 간주해 0%로 계산한다.
         const currentValue = Number(entry.amount_krw) || 0;
         const rate = entry.return_rate === null || entry.return_rate === undefined ? 0 : Number(entry.return_rate);
         const principal = computePrincipal(currentValue, rate);
@@ -142,7 +143,7 @@ function sumEntries(entries, filterFn) {
 
 function computeTypeInvestment(entries, typeKey, owner) {
     const type = getAssetTypeDef(typeKey);
-    if (!type || !type.hasReturnRate) {
+    if (!type) {
         return null;
     }
 

@@ -17,6 +17,8 @@ const {
 const app = express();
 const PORT = process.env.PORT || 3000;
 const ADMIN_USERNAME = (process.env.ADMIN_USERNAME || '').trim();
+// 신규 가입을 임시로 막고 싶을 때 false로 변경
+const REGISTRATION_ENABLED = false;
 
 app.use(cors());
 app.use(express.json());
@@ -118,8 +120,16 @@ function normalizeAssetEntries(rawEntries, usdKrw) {
     return { entries };
 }
 
+app.get('/api/auth/register-status', (req, res) => {
+    res.json({ enabled: REGISTRATION_ENABLED });
+});
+
 app.post('/api/auth/register', async (req, res) => {
     try {
+        if (!REGISTRATION_ENABLED) {
+            return res.status(403).json({ message: '현재 회원가입이 잠시 중단되었습니다.' });
+        }
+
         const { username, password, name } = req.body;
 
         if (!username || !password || !name) {
